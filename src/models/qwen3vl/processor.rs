@@ -129,7 +129,7 @@ impl Qwen3VLProcessor {
     ) -> Result<Tensor> {
         let img_h = img.height();
         let img_w = img.width();
-        //  h,w resize成 28的倍数
+        //  h,w resize成 32的倍数
         let (resize_h, resize_w) = img_smart_resize(
             img_h,
             img_w,

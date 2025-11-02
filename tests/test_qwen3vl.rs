@@ -17,7 +17,7 @@ fn qwen3vl_generate() -> Result<()> {
         "messages": [
             {
                 "role": "user",
-                "content": [   
+                "content": [
                     {
                         "type": "video",
                         "video_url": 

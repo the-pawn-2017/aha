@@ -328,25 +328,33 @@ impl Qwen3VLVisionModel {
                 return Err(anyhow!(format!("grid_thw Expected exactly 3 elements")));
             };
             split_idx.push((h * w) as usize);
-            let num_grid_per_side = (self.num_grid_per_side - 1) as f32;
-            let h_idxs = linspace(0.0, num_grid_per_side, h as usize, grid_thw.device())?;
-            let w_idxs = linspace(0.0, num_grid_per_side, w as usize, grid_thw.device())?;
+            let num_grid_per_side_sub_one = (self.num_grid_per_side - 1) as f32;
+            let h_idxs = linspace(
+                0.0,
+                num_grid_per_side_sub_one,
+                h as usize,
+                grid_thw.device(),
+            )?;
+            let w_idxs = linspace(
+                0.0,
+                num_grid_per_side_sub_one,
+                w as usize,
+                grid_thw.device(),
+            )?;
             let h_idxs_floor = h_idxs.to_dtype(candle_core::DType::U32)?;
             let w_idxs_floor = w_idxs.to_dtype(candle_core::DType::U32)?;
             let h_idxs_ceil = h_idxs_floor
                 .affine(1.0, 1.0)?
-                .clamp(0u32, num_grid_per_side as u32)?;
+                .clamp(0u32, num_grid_per_side_sub_one as u32)?;
             let w_idxs_ceil = w_idxs_floor
                 .affine(1.0, 1.0)?
-                .clamp(0u32, num_grid_per_side as u32)?;
-
+                .clamp(0u32, num_grid_per_side_sub_one as u32)?;
             let dh = h_idxs
                 .sub(&h_idxs_floor.to_dtype(h_idxs.dtype())?)?
                 .unsqueeze(D::Minus1)?;
             let dw = w_idxs
                 .sub(&w_idxs_floor.to_dtype(h_idxs.dtype())?)?
                 .unsqueeze(0)?;
-
             let base_h = h_idxs_floor
                 .affine(self.num_grid_per_side as f64, 0.0)?
                 .unsqueeze(D::Minus1)?;
@@ -415,7 +423,6 @@ impl Qwen3VLVisionModel {
         let mut patch_pos_embeds_permute = vec![];
         let patch_pos_embeds = split_tensor(&patch_pos_embeds, &split_idx, 0)?;
         let merge_size = self.spatial_merge_size;
-        // for i in 0..grid_thw.dim(0)? {
         for (i, pos_embed) in patch_pos_embeds.iter().enumerate() {
             let [t, h, w] = grid_thw.i(i)?.to_vec1::<u32>()?[..] else {
                 return Err(anyhow!(format!("grid_thw Expected exactly 3 elements")));
@@ -443,7 +450,6 @@ impl Qwen3VLVisionModel {
 
     pub fn rot_pos_emb(&self, grid_thw: &Tensor) -> Result<Tensor> {
         let merge_size = self.spatial_merge_size;
-
         let max_hw = grid_thw.i((.., 1..))?.max_all()?.to_scalar::<u32>()?;
         let freq_table = self
             .rotary_pos_emb
@@ -751,17 +757,6 @@ impl Qwen3VLTextModel {
             mrope_section,
         })
     }
-
-    // fn deepstack_process(
-    //     &self,
-    //     xs: &Tensor,
-    //     visual_pos_masks: &Tensor,
-    //     visual_embeds: &Tensor,
-    // ) -> Result<Tensor> {
-    //     let visual_nonzero_index = nonzero_index(&visual_pos_masks)?;
-    //     let xs = xs.index_add(&visual_nonzero_index, visual_embeds, 0)?;
-    //     Ok(xs)
-    // }
 
     pub fn forward(
         &mut self,
@@ -1170,7 +1165,6 @@ impl Qwen3VLModel {
         }
         let mut visual_pos_mask = None;
         let mut deepstack_visual_embeds = None;
-        // if image_mask.is_some() && video_mask.is_some() {
         if let Some(image_mask_) = image_mask {
             if let Some(video_mask_) = video_mask {
                 let image_mask_ = image_mask_.squeeze(0)?;
