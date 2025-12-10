@@ -171,6 +171,8 @@ impl<'a> GenerateModel for Qwen3VLGenerateModel<'a> {
             let image_grid_thw = image_grid_thw.as_ref();
             let mut pixel_values_video = pixel_values_video.as_ref();
             let video_grid_thw = video_grid_thw.as_ref();
+            let mut tool_call_id = None;
+            let mut tool_call_content = String::new();
             for _ in 0..sample_len {
             let logits = self.qwen3_vl.forward(
                 &input_ids,
@@ -203,8 +205,28 @@ impl<'a> GenerateModel for Qwen3VLGenerateModel<'a> {
                     continue;
                 }
                 error_tokens.clear();
-                let chunk = build_completion_chunk_response(decoded_token, &self.model_name, None, None);
-                yield Ok(chunk);
+
+                if decoded_token.as_str() == "<tool_call>" {
+                    tool_call_id = Some(uuid::Uuid::new_v4().to_string());
+                    continue;
+                } else {
+                    if decoded_token.as_str() == "</tool_call>" {
+                        let chunk = build_completion_chunk_response(decoded_token, &self.model_name, tool_call_id.clone(), Some(tool_call_content.clone()));
+                        tool_call_id = None;
+                        tool_call_content = String::new();
+                        yield Ok(chunk);
+                    }
+                    else {
+                        if tool_call_id.is_some() {
+                            tool_call_content.push_str(&decoded_token);
+                            continue;
+                        }
+                        else {
+                            let chunk = build_completion_chunk_response(decoded_token, &self.model_name, None, None);
+                            yield Ok(chunk);
+                        }
+                    }
+                }                
                 if next_token == self.eos_token_id1 || next_token == self.eos_token_id2 {
                     break;
                 }

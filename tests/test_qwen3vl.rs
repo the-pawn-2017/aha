@@ -19,15 +19,15 @@ fn qwen3vl_generate() -> Result<()> {
                 "role": "user",
                 "content": [
                     {
-                        "type": "video",
-                        "video_url": 
+                        "type": "image",
+                        "image_url": 
                         {
-                            "url": "./assets/video/video_test.mp4"
+                            "url": "file://./assets/img/ocr_test1.png"
                         }
                     },             
                     {
                         "type": "text", 
-                        "text": "视频里发生了什么"
+                        "text": "请分析图片并提取所有可见文本内容，按从左到右、从上到下的布局，返回纯文本"
                     }
                 ]
             }
@@ -70,11 +70,39 @@ async fn qwen3vl_stream() -> Result<()> {
                     },              
                     {
                         "type": "text", 
-                        "text": "视频中发生了什么？"
+                        "text": "视频中发生了什么？, 现在几点了"
                     }
                 ]
             }
-        ]
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_time",
+                    "description": "当你想知道现在的时间时非常有用。",
+                    "parameters": {}
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_weather",
+                    "description": "当你想查询指定城市的天气时非常有用。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "城市或县区，比如北京市、杭州市、余杭区等。"
+                            }
+                        },
+                        "required": ["location"]
+                    }
+                }
+            }
+        ],
+        "tool_choice": null
     }
     "#;
     let mes: ChatCompletionParameters = serde_json::from_str(message)?;

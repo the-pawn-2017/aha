@@ -102,6 +102,7 @@ impl<'a> ChatTemplate<'a> {
     pub fn apply_chat_template(&self, messages: &ChatCompletionParameters) -> Result<String> {
         let context = context! {
             messages => &messages.messages,
+            tools => &messages.tools.as_ref(),
             add_generation_prompt => true,
         };
         let template = self
