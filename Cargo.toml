@@ -30,6 +30,7 @@ hound = "3.5.1"
 clap = { version = "4.5.51", features = ["derive"] }
 modelscope = "0.1.0"
 dirs = "6.0.0"
+url = "2.5.7"
 
 [features]
 flash-attn=["candle-flash-attn"]

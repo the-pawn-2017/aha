@@ -1,10 +1,10 @@
-use std::collections::HashSet;
 use std::io::Cursor;
+use std::{collections::HashSet, path::PathBuf};
 
 use aha_openai_dive::v1::resources::chat::{
     ChatCompletionParameters, ChatMessage, ChatMessageContent, ChatMessageContentPart,
 };
-use anyhow::{Ok, Result, anyhow};
+use anyhow::{Result, anyhow};
 use base64::{Engine, engine::general_purpose};
 use candle_core::{DType, Device, Tensor};
 use image::{DynamicImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
@@ -48,8 +48,18 @@ pub fn get_image(file: &str) -> Result<DynamicImage> {
         img = Some(load_image_from_url(file)?);
     }
     if file.starts_with("file://") {
-        let mut path = file.to_owned();
-        path = path.split_off(7);
+        // let mut path = file.to_owned();
+        // path = path.split_off(7);
+        let path = url::Url::parse(file)?;
+        let path = path.to_file_path();
+        let path = match path {
+            Ok(path) => path,
+            Err(_) => {
+                let mut path = file.to_owned();
+                path = path.split_off(7);
+                PathBuf::from(path)
+            }
+        };
         img = Some(
             ImageReader::open(path)
                 .map_err(|e| anyhow!(format!("Failed to open file: {}", e)))?

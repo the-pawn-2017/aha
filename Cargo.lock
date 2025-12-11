@@ -43,6 +43,7 @@ dependencies = [
  "serde_json",
  "tokenizers",
  "tokio",
+ "url",
  "uuid",
 ]
 
