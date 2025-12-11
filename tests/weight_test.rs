@@ -47,6 +47,26 @@ fn voxcpm_weight() -> Result<()> {
 }
 
 #[test]
+fn voxcpm1_5_weight() -> Result<()> {
+    let model_path = "/home/jhq/huggingface_model/OpenBMB/VoxCPM1.5/";
+    let model_list = find_type_files(model_path, "pth")?;
+    println!("model_list: {:?}", model_list);
+    let dev = get_device(None);
+    let mut dict_to_hashmap = HashMap::new();
+    let mut dtype = candle_core::DType::F32;
+    for m in model_list {
+        let dict = read_all_with_key(m, Some("state_dict"))?;
+        dtype = dict[0].1.dtype();
+        for (k, v) in dict {
+            println!("key: {}, tensor shape: {:?}", k, v);
+            dict_to_hashmap.insert(k, v);
+        }
+    }
+    
+    Ok(())
+}
+
+#[test]
 fn qwen3vl_weight() -> Result<()> {
     let model_path = "/home/jhq/huggingface_model/Qwen/Qwen3-VL-4B-Instruct/";
     let model_list = find_type_files(model_path, "safetensors")?;

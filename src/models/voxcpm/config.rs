@@ -52,6 +52,16 @@ pub struct VoxCPMDitConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct AudioVaeConfig {
+    pub encoder_dim: usize,
+    pub encoder_rates: Vec<usize>,
+    pub latent_dim: usize,
+    pub decoder_dim: usize,
+    pub decoder_rates: Vec<usize>,
+    pub sample_rate: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct VoxCPMConfig {
     pub lm_config: VoxMiniCPM4Config,
     pub patch_size: usize,
@@ -61,6 +71,7 @@ pub struct VoxCPMConfig {
     pub residual_lm_num_layers: usize,
     pub encoder_config: VoxCPMEncoderConfig,
     pub dit_config: VoxCPMDitConfig,
+    pub audio_vae_config: Option<AudioVaeConfig>,
     pub max_length: usize,
     pub dtype: String,
 }

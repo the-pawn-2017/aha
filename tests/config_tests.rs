@@ -28,9 +28,19 @@ fn minicpm4_config() -> Result<()> {
 
 #[test]
 fn voxcpm_config() -> Result<()> {
-    // cargo test -F cuda,flash-attn minicpm4_config -r -- --nocapture
-    // cargo test -F cuda minicpm4_config -- --nocapture
+    // cargo test -F cuda,flash-attn voxcpm_config -r -- --nocapture
+    // cargo test -F cuda voxcpm_config -r -- --nocapture
     let model_path = "/home/jhq/huggingface_model/openbmb/VoxCPM-0.5B/";
+    let config_path = model_path.to_string() + "/config.json";
+    let config: VoxCPMConfig = serde_json::from_slice(&std::fs::read(config_path)?)?;
+    println!("{:?}", config);
+    Ok(())
+}
+
+#[test]
+fn voxcpm1_5_config() -> Result<()> {
+    // cargo test -F cuda voxcpm1_5_config -r -- --nocapture
+    let model_path = "/home/jhq/huggingface_model/OpenBMB/VoxCPM1.5/";
     let config_path = model_path.to_string() + "/config.json";
     let config: VoxCPMConfig = serde_json::from_slice(&std::fs::read(config_path)?)?;
     println!("{:?}", config);

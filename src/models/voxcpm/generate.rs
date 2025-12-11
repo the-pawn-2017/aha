@@ -6,7 +6,7 @@ use candle_nn::VarBuilder;
 
 use crate::{
     models::voxcpm::{
-        audio_vae::AudioVAE, config::VoxCPMConfig, model::VoxCPMModel,
+        audio_vae::AudioVAE, config::{AudioVaeConfig, VoxCPMConfig}, model::VoxCPMModel,
         tokenizer::SingleChineseTokenizer,
     },
     utils::{find_type_files, get_device, get_dtype},
@@ -20,7 +20,8 @@ pub struct VoxCPMGenerate {
 impl VoxCPMGenerate {
     pub fn init(path: &str, device: Option<&Device>, dtype: Option<DType>) -> Result<Self> {
         let device = &get_device(device);
-
+        let config_path = path.to_string() + "/config.json";
+        let config: VoxCPMConfig = serde_json::from_slice(&std::fs::read(config_path)?)?;
         let model_list = find_type_files(path, "pth")?;
         // println!(" pth model_list: {:?}", model_list);
         let mut dict_to_hashmap = HashMap::new();
@@ -34,21 +35,31 @@ impl VoxCPMGenerate {
             }
         }
         let vb_vae = VarBuilder::from_tensors(dict_to_hashmap, vae_dtype, device);
+        let audio_config = match config.audio_vae_config.clone() {
+            Some(config) => config,
+            None => AudioVaeConfig {
+                encoder_dim: 128,
+                encoder_rates: vec![2, 5, 8, 8],
+                latent_dim: 64,
+                decoder_dim: 1536,
+                decoder_rates: vec![8, 8, 5, 2],
+                sample_rate: 16000
+            }
+        };
         let audio_vae = AudioVAE::new(
             vb_vae,
-            128,
-            vec![2, 5, 8, 8],
-            Some(64),
-            1536,
-            vec![8, 8, 5, 2],
-            16000,
+            audio_config.encoder_dim,
+            audio_config.encoder_rates.clone(),
+            Some(audio_config.latent_dim),
+            audio_config.decoder_dim,
+            audio_config.decoder_rates.clone(),
+            audio_config.sample_rate,
         )?;
 
         let model_list = find_type_files(path, "bin")?;
         // println!(" bin model_list: {:?}", model_list);
         dict_to_hashmap = HashMap::new();
-        let config_path = path.to_string() + "/config.json";
-        let config: VoxCPMConfig = serde_json::from_slice(&std::fs::read(config_path)?)?;
+        
         let cfg_dtype = config.dtype.as_str();
         let m_dtype = get_dtype(dtype, cfg_dtype);
         for m in model_list {
