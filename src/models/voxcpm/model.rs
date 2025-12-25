@@ -513,7 +513,7 @@ impl VoxCPMModel {
                 let text_token = Tensor::cat(&[text_token, audio_start], D::Minus1)?;
                 let text_length = text_token.dim(0)?;
                 let mut audio =
-                    load_audio_with_resample(path, self.device.clone(), Some(self.sample_rate))?;
+                    load_audio_with_resample(&path, self.device.clone(), Some(self.sample_rate))?;
                 let patch_len = self.patch_size * self.chunk_size;
                 if audio.dim(1)? % patch_len != 0 {
                     audio = audio.pad_with_zeros(
@@ -728,8 +728,11 @@ impl VoxCPMModel {
     ) -> Result<HashMap<String, Tensor>> {
         let text_token = self.tokenizer.encode(prompt_text)?;
         let text_token = Tensor::from_slice(&text_token, text_token.len(), &self.device)?;
-        let mut audio =
-            load_audio_with_resample(prompt_wav_path, self.device.clone(), Some(self.sample_rate))?;
+        let mut audio = load_audio_with_resample(
+            &prompt_wav_path,
+            self.device.clone(),
+            Some(self.sample_rate),
+        )?;
         let patch_len = self.patch_size * self.chunk_size;
         if audio.dim(1)? % patch_len != 0 {
             audio = audio.pad_with_zeros(D::Minus1, 0, patch_len - audio.dim(1)? % patch_len)?;

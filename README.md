@@ -111,6 +111,9 @@ cargo run -F cuda -r -- [参数]
     * deepseek-ocr: deepseek-ai/DeepSeek-OCR 模型
     * hunyuan-ocr: Tencent-Hunyuan/HunyuanOCR 模型
     * paddleocr-vl: PaddlePaddle/PaddleOCR-VL 模型
+    * RMBG2.0: AI-ModelScope/RMBG-2.0 模型
+    * voxcpm: OpenBMB/VoxCPM-0.5B 模型
+    * voxcpm1.5: OpenBMB/VoxCPM1.5 模型
 * 示例：--model deepseek-ocr 或 -m qwen3vl-2b
 
 3. 权重路径
@@ -139,6 +142,34 @@ cargo run -F cuda -r -- [参数]
 * 模型参数 (--model 或 -m) 是必需的
 * 如果未指定 --weight-path，程序会自动下载指定模型
 * 下载的模型默认保存在 ~/.aha/ 目录下（除非指定了 --save-dir）
+
+#### API接口介绍
+项目提供基于 OpenAI API 兼容的 RESTful 接口，支持多种模型推理任务。
+
+##### 接口列表
+1. 对话接口
+- **端点**: `POST /chat/completions`
+- **功能**: 多模态对话和文本生成
+- **支持模型**: Qwen2.5VL,Qwen3VL,DeepSeekOCR 等
+- **请求格式**: OpenAI Chat Completion 格式
+- **响应格式**: OpenAI Chat Completion 格式
+- **流式支持**: 支持
+
+2. 图像处理接口
+- **端点**: `POST /images/remove_background`
+- **功能**: 图像背景移除
+- **支持模型**: RMBG-2.0
+- **请求格式**: OpenAI Chat Completion 格式
+- **响应格式**: OpenAI Chat Completion 格式
+- **流式支持**: 不支持
+
+3. 语音生成接口
+- **端点**: `POST /audio/speech`
+- **功能**: 语音合成和生成
+- **支持模型**: VoxCPM,VoxCPM1.5
+- **请求格式**: OpenAI Chat Completion 格式
+- **响应格式**: OpenAI Chat Completion 格式
+- **流式支持**: 不支持
 
 ### 作为库使用
 * cargo add aha
@@ -255,6 +286,9 @@ cargo test -F cuda voxcpm_generate -r -- --nocapture
 2. 提交新的 Issue，包含详细描述和复现步骤
 
 ## 更新日志
+### v0.1.6
+* 支持RMGB2.0 模型
+
 ### v0.1.5
 * 支持VoxCPM1.5 模型
 

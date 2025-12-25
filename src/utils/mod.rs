@@ -3,19 +3,21 @@ pub mod img_utils;
 pub mod tensor_utils;
 pub mod video_utils;
 
-use std::process::Command;
+use std::{fs, process::Command};
 
 use aha_openai_dive::v1::resources::{
     chat::{
-        ChatCompletionChoice, ChatCompletionChunkChoice, ChatCompletionChunkResponse,
-        ChatCompletionParameters, ChatCompletionResponse, ChatMessage, ChatMessageContent,
-        ChatMessageContentPart, DeltaChatMessage, DeltaFunction, DeltaToolCall, Function, ToolCall,
+        AudioUrlType, ChatCompletionChoice, ChatCompletionChunkChoice, ChatCompletionChunkResponse,
+        ChatCompletionParameters, ChatCompletionResponse, ChatMessage, ChatMessageAudioContentPart,
+        ChatMessageContent, ChatMessageContentPart, ChatMessageImageContentPart, DeltaChatMessage,
+        DeltaFunction, DeltaToolCall, Function, ImageUrlType, ToolCall,
     },
     shared::{FinishReason, Usage},
 };
 use anyhow::Result;
 use candle_core::{DType, Device};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
+use dirs::home_dir;
 
 pub fn get_device(device: Option<&Device>) -> Device {
     match device {
@@ -137,6 +139,90 @@ pub fn ceil_by_factor(num: f32, factor: u32) -> u32 {
     ceil * factor
 }
 
+pub fn build_img_completion_response(
+    base64vec: &Vec<String>,
+    model_name: &str,
+) -> ChatCompletionResponse {
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut response = ChatCompletionResponse {
+        id: Some(id),
+        choices: vec![],
+        created: chrono::Utc::now().timestamp() as u32,
+        model: model_name.to_string(),
+        service_tier: None,
+        system_fingerprint: None,
+        object: "chat.completion".to_string(),
+        usage: None,
+    };
+    let mut conten_part_vec = vec![];
+    for img_bas64 in base64vec {
+        let img_base64_prefix = "data:image/png;base64,".to_string() + img_bas64;
+        let part = ChatMessageContentPart::Image(ChatMessageImageContentPart {
+            r#type: "image".to_string(),
+            image_url: ImageUrlType {
+                url: img_base64_prefix,
+                detail: None,
+            },
+        });
+        conten_part_vec.push(part);
+    }
+    let choice = ChatCompletionChoice {
+        index: 0,
+        message: ChatMessage::Assistant {
+            content: Some(ChatMessageContent::ContentPart(conten_part_vec)),
+            reasoning_content: None,
+            refusal: None,
+            name: None,
+            audio: None,
+            tool_calls: None,
+        },
+        finish_reason: Some(FinishReason::StopSequenceReached),
+        logprobs: None,
+    };
+    response.choices.push(choice);
+    response
+}
+
+pub fn build_audio_completion_response(
+    base64_audio: &String,
+    model_name: &str,
+) -> ChatCompletionResponse {
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut response = ChatCompletionResponse {
+        id: Some(id),
+        choices: vec![],
+        created: chrono::Utc::now().timestamp() as u32,
+        model: model_name.to_string(),
+        service_tier: None,
+        system_fingerprint: None,
+        object: "chat.completion".to_string(),
+        usage: None,
+    };
+
+    let base64_audio = format!("data:audio/wav;base64,{}", base64_audio);
+    let conten_part_vec = vec![ChatMessageContentPart::Audio(ChatMessageAudioContentPart {
+        r#type: "audio".to_string(),
+        audio_url: AudioUrlType {
+            url: base64_audio.to_string(),
+        },
+    })];
+    let choice = ChatCompletionChoice {
+        index: 0,
+        message: ChatMessage::Assistant {
+            content: Some(ChatMessageContent::ContentPart(conten_part_vec)),
+            reasoning_content: None,
+            refusal: None,
+            name: None,
+            audio: None,
+            tool_calls: None,
+        },
+        finish_reason: Some(FinishReason::StopSequenceReached),
+        logprobs: None,
+    };
+    response.choices.push(choice);
+    response
+}
+
 pub fn build_completion_response(
     res: String,
     model_name: &str,
@@ -144,10 +230,6 @@ pub fn build_completion_response(
 ) -> ChatCompletionResponse {
     let id = uuid::Uuid::new_v4().to_string();
     let usage = num_tokens.map(|num| Usage {
-        input_tokens: None,
-        input_tokens_details: None,
-        output_tokens: None,
-        output_tokens_details: None,
         prompt_tokens: None,
         completion_tokens: None,
         total_tokens: num,
@@ -357,4 +439,50 @@ pub fn extract_mes(mes: &ChatCompletionParameters) -> Result<Vec<(String, String
         }
     }
     Ok(mes_vec)
+}
+
+pub fn extract_metadata_value<T>(
+    metadata: &Option<std::collections::HashMap<String, String>>,
+    key: &str,
+) -> Option<T>
+where
+    T: std::str::FromStr + Clone + PartialEq,
+{
+    if let Some(map) = metadata
+        && let Some(value_str) = map.get(key)
+        && let Ok(value) = value_str.parse::<T>()
+    {
+        return Some(value);
+    }
+    None
+}
+
+pub fn extract_user_text(mes: &ChatCompletionParameters) -> Result<String> {
+    let mut ret = "".to_string();
+    for chat_mes in mes.messages.clone() {
+        if let ChatMessage::User { content, .. } = chat_mes.clone()
+            && let ChatMessageContent::ContentPart(part_vec) = content
+        {
+            for part in part_vec {
+                if let ChatMessageContentPart::Text(text_part) = part {
+                    let text = text_part.text;
+                    if text.chars().count() > 0 {
+                        ret = ret + &text + "\n"
+                    }
+                }
+            }
+        }
+    }
+    ret = ret.trim().to_string();
+    Ok(ret)
+}
+
+pub fn get_default_save_dir() -> Option<String> {
+    home_dir().map(|mut path| {
+        path.push(".aha");
+        if let Err(e) = fs::create_dir_all(&path) {
+            eprintln!("Failed to create directory {:?}: {}", path, e);
+        }
+        path.to_string_lossy().to_string()
+    })
 }

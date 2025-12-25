@@ -1,14 +1,64 @@
 use std::time::Instant;
 
 use aha::{
-    models::voxcpm::{generate::VoxCPMGenerate, tokenizer::SingleChineseTokenizer},
-    utils::audio_utils::save_wav,
+    models::{
+        GenerateModel,
+        voxcpm::{generate::VoxCPMGenerate, tokenizer::SingleChineseTokenizer},
+    },
+    utils::audio_utils::{extract_and_save_audio_from_response, save_wav},
 };
+use aha_openai_dive::v1::resources::chat::ChatCompletionParameters;
 use anyhow::{Ok, Result};
 
 #[test]
+fn voxcpm_use_message_generate() -> Result<()> {
+    // RUST_BACKTRACE=1 cargo test -F cuda voxcpm_use_message_generate -r -- --nocapture
+    let model_path = "/home/jhq/huggingface_model/openbmb/VoxCPM-0.5B/";
+    let message = r#"
+    {
+        "model": "voxcpm",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "audio",
+                        "audio_url": 
+                        {
+                            "url": "https://sis-sample-audio.obs.cn-north-1.myhuaweicloud.com/16k16bit.wav"
+                        }
+                    },              
+                    {
+                        "type": "text", 
+                        "text": "VoxCPM is an innovative end-to-end TTS model from ModelBest, designed to generate highly realistic speech."
+                    }
+                ]
+            }
+        ],
+        "metadata": {"prompt_text": "华为致力于把数字世界带给每个人，每个家庭，每个组织，构建万物互联的智能世界。"}
+    }
+    "#;
+    let mes: ChatCompletionParameters = serde_json::from_str(message)?;
+    let i_start = Instant::now();
+    let mut voxcpm_generate = VoxCPMGenerate::init(model_path, None, None)?;
+    let i_duration = i_start.elapsed();
+    println!("Time elapsed in load model is: {:?}", i_duration);
+
+    let i_start = Instant::now();
+    let generate = voxcpm_generate.generate(mes)?;
+    let save_path = extract_and_save_audio_from_response(&generate, "./")?;
+    for path in save_path {
+        println!("save audio: {}", path);
+    }
+    let i_duration = i_start.elapsed();
+    println!("Time elapsed in generate is: {:?}", i_duration);
+    // save_wav(&generate, "voxcpm.wav", 16000)?;
+    Ok(())
+}
+
+#[test]
 fn voxcpm_generate() -> Result<()> {
-    // RUST_BACKTRACE=1 cargo test -F cuda,flash-attn voxcpm_generate -r -- --nocapture
+    // RUST_BACKTRACE=1 cargo test -F cuda voxcpm_generate -r -- --nocapture
     let model_path = "/home/jhq/huggingface_model/openbmb/VoxCPM-0.5B/";
 
     let i_start = Instant::now();
@@ -18,12 +68,12 @@ fn voxcpm_generate() -> Result<()> {
 
     let i_start = Instant::now();
     // let generate = voxcpm_generate.generate_simple("太阳当空照，花儿对我笑，小鸟说早早早".to_string())?;
-    let generate = voxcpm_generate.generate(
+    let generate = voxcpm_generate.inference(
         "VoxCPM is an innovative end-to-end TTS model from ModelBest, designed to generate highly realistic speech.".to_string(),
         Some("啥子小师叔，打狗还要看主人，你再要继续，我，就是你的对手".to_string()),
-        Some("./assets/audio/voice_01.wav".to_string()),
+        Some("file://./assets/audio/voice_01.wav".to_string()),
         // Some("一定被灰太狼给吃了，我已经为他准备好了花圈了".to_string()),
-        // Some("./assets/audio/voice_05.wav".to_string()),
+        // Some("file://./assets/audio/voice_05.wav".to_string()),
         2,
         100,
         10,
@@ -35,7 +85,7 @@ fn voxcpm_generate() -> Result<()> {
     // 创建prompt_cache
     // let _ = voxcpm_generate.build_prompt_cache(
     //     "啥子小师叔，打狗还要看主人，你再要继续，我，就是你的对手".to_string(),
-    //     "./assets/audio/voice_01.wav".to_string(),
+    //     "file://./assets/audio/voice_01.wav".to_string(),
     // )?;
     // // 使用prompt_cache生成语音
     // let generate = voxcpm_generate.generate_use_prompt_cache(

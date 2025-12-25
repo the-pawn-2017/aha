@@ -1,18 +1,24 @@
-use aha_openai_dive::v1::resources::chat::ChatCompletionParameters;
+use std::io::Cursor;
+
+use aha_openai_dive::v1::resources::chat::{
+    ChatCompletionChunkResponse, ChatCompletionParameters, ChatCompletionResponse,
+};
 use anyhow::Result;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use image::{Rgba, RgbaImage};
+use rocket::futures::{Stream, stream};
 
 use crate::{
-    models::rmbg2_0::model::BiRefNet,
+    models::{GenerateModel, rmbg2_0::model::BiRefNet},
     utils::{
-        find_type_files, get_device, get_dtype,
+        build_img_completion_response, find_type_files, get_device, get_dtype,
         img_utils::{extract_images, float_tensor_to_dynamic_image, img_transform_with_resize},
     },
 };
 
-pub struct RMBG2_0 {
+pub struct RMBG2_0Model {
     model: BiRefNet,
     h: u32,
     w: u32,
@@ -20,9 +26,10 @@ pub struct RMBG2_0 {
     img_std: Tensor,
     device: Device,
     dtype: DType,
+    model_name: String,
 }
 
-impl RMBG2_0 {
+impl RMBG2_0Model {
     pub fn init(path: &str, device: Option<&Device>, dtype: Option<DType>) -> Result<Self> {
         let device = get_device(device);
         let dtype = get_dtype(dtype, "float32");
@@ -41,10 +48,11 @@ impl RMBG2_0 {
             img_std,
             device,
             dtype,
+            model_name: "RMBG2.0".to_string(),
         })
     }
 
-    pub fn generate(&self, mes: ChatCompletionParameters) -> Result<Vec<RgbaImage>> {
+    pub fn inference(&self, mes: ChatCompletionParameters) -> Result<Vec<RgbaImage>> {
         let imgs = extract_images(&mes)?;
         let mut rmbg_png = vec![];
         for img in imgs {
@@ -76,5 +84,41 @@ impl RMBG2_0 {
             rmbg_png.push(rgba_img);
         }
         Ok(rmbg_png)
+    }
+}
+
+impl GenerateModel for RMBG2_0Model {
+    fn generate(&mut self, mes: ChatCompletionParameters) -> Result<ChatCompletionResponse> {
+        let rmbg_png = self.inference(mes)?;
+        let mut base64_vec = vec![];
+        for img in rmbg_png {
+            let mut png_bytes = Vec::new();
+            img.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)?;
+            let base64_string = BASE64_STANDARD.encode(png_bytes);
+            base64_vec.push(base64_string);
+        }
+        let response = build_img_completion_response(&base64_vec, &self.model_name);
+        Ok(response)
+    }
+    #[allow(unused_variables)]
+    fn generate_stream(
+        &mut self,
+        mes: ChatCompletionParameters,
+    ) -> Result<
+        Box<
+            dyn Stream<Item = Result<ChatCompletionChunkResponse, anyhow::Error>>
+                + Send
+                + Unpin
+                + '_,
+        >,
+    > {
+        let error_stream = stream::once(async {
+            Err(anyhow::anyhow!(format!(
+                "{} model not support stream",
+                self.model_name
+            ))) as Result<ChatCompletionChunkResponse, anyhow::Error>
+        });
+
+        Ok(Box::new(Box::pin(error_stream)))
     }
 }

@@ -1,8 +1,7 @@
 use std::time::Duration;
 
-use aha::models::WhichModel;
+use aha::{models::WhichModel, utils::get_default_save_dir};
 use clap::Parser;
-use dirs::home_dir;
 use modelscope::ModelScope;
 use rocket::{
     Config,
@@ -65,13 +64,6 @@ async fn download_model(model_id: &str, save_dir: &str, max_retries: u32) -> any
     }
 }
 
-fn get_default_save_dir() -> Option<String> {
-    home_dir().map(|mut path| {
-        path.push(".aha"); // 在 home 目录下创建 .aha 文件夹
-        path.to_string_lossy().to_string()
-    })
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -86,6 +78,9 @@ async fn main() -> anyhow::Result<()> {
         WhichModel::DeepSeekOCR => "deepseek-ai/DeepSeek-OCR",
         WhichModel::HunyuanOCR => "Tencent-Hunyuan/HunyuanOCR",
         WhichModel::PaddleOCRVL => "PaddlePaddle/PaddleOCR-VL",
+        WhichModel::RMBG2_0 => "AI-ModelScope/RMBG-2.0",
+        WhichModel::VoxCPM => "OpenBMB/VoxCPM-0.5B",
+        WhichModel::VoxCPM1_5 => "OpenBMB/VoxCPM1.5",
     };
     let model_path = match args.weight_path {
         Some(path) => path,
@@ -118,6 +113,10 @@ pub async fn start_http_server(port: u16) -> anyhow::Result<()> {
     });
 
     builder = builder.mount("/chat", routes![api::chat]);
+    // /images/remove_background
+    builder = builder.mount("/images", routes![api::remove_background]);
+    // /images/speech
+    builder = builder.mount("/audio", routes![api::speech]);
 
     builder.launch().await?;
     Ok(())

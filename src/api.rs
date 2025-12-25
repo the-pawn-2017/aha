@@ -104,3 +104,41 @@ pub(crate) async fn chat(
         }
     }
 }
+
+#[post("/remove_background", data = "<req>")]
+pub(crate) async fn remove_background(req: Json<ChatCompletionParameters>) -> (Status, String) {
+    let response = {
+        let model_ref = MODEL
+            .get()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("model not init"))
+            .unwrap();
+        model_ref.write().await.generate(req.into_inner())
+    };
+    match response {
+        Ok(res) => {
+            let response_str = serde_json::to_string(&res).unwrap();
+            (Status::Ok, response_str)
+        }
+        Err(e) => (Status::InternalServerError, e.to_string()),
+    }
+}
+
+#[post("/speech", data = "<req>")]
+pub(crate) async fn speech(req: Json<ChatCompletionParameters>) -> (Status, String) {
+    let response = {
+        let model_ref = MODEL
+            .get()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("model not init"))
+            .unwrap();
+        model_ref.write().await.generate(req.into_inner())
+    };
+    match response {
+        Ok(res) => {
+            let response_str = serde_json::to_string(&res).unwrap();
+            (Status::Ok, response_str)
+        }
+        Err(e) => (Status::InternalServerError, e.to_string()),
+    }
+}

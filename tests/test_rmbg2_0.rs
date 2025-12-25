@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use aha::models::rmbg2_0::generate::RMBG2_0;
+use aha::models::rmbg2_0::generate::RMBG2_0Model;
 use aha_openai_dive::v1::resources::chat::ChatCompletionParameters;
 use anyhow::Result;
 
@@ -31,12 +31,12 @@ fn rmbg2_0_generate() -> Result<()> {
     "#;
     let mes: ChatCompletionParameters = serde_json::from_str(message)?;
     let i_start = Instant::now();
-    let model = RMBG2_0::init(model_path, None, None)?;
+    let model = RMBG2_0Model::init(model_path, None, None)?;
     let i_duration = i_start.elapsed();
     println!("Time elapsed in load model is: {:?}", i_duration);
 
     let i_start = Instant::now();
-    let result = model.generate(mes)?;
+    let result = model.inference(mes)?;
     let i_duration = i_start.elapsed();
     println!("Time elapsed in generate is: {:?}", i_duration);
     for (i, img) in result.iter().enumerate() {

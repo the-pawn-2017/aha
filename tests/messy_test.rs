@@ -1,3 +1,4 @@
+use aha::utils::get_default_save_dir;
 use anyhow::Result;
 use candle_core::Tensor;
 
@@ -5,18 +6,19 @@ use candle_core::Tensor;
 fn messy_test() -> Result<()> {
     // RUST_BACKTRACE=1 cargo test -F cuda messy_test -r -- --nocapture
     let device = &candle_core::Device::Cpu;
+    // let path = get_default_save_dir();
     let x = Tensor::arange(0.0, 9.0, device)?;
     println!("x: {}", x);
-    let x = x
-        .unsqueeze(0)?
-        .unsqueeze(0)?
-        .broadcast_as((5, 5, 9))?
-        .reshape((5, 5, 3, 3))?;
-    println!("x: {}", x);
-    let x = x.permute((0, 2, 1, 3))?;
-    println!("x: {}", x);
-    let x = x.reshape((15, 15))?;
-    println!("x: {}", x);
+    // let x = x
+    //     .unsqueeze(0)?
+    //     .unsqueeze(0)?
+    //     .broadcast_as((5, 5, 9))?
+    //     .reshape((5, 5, 3, 3))?;
+    // println!("x: {}", x);
+    // let x = x.permute((0, 2, 1, 3))?;
+    // println!("x: {}", x);
+    // let x = x.reshape((15, 15))?;
+    // println!("x: {}", x);
     // let xs = Tensor::rand(0.0, 5.0, (1, 1, 3, 3), device)?;
     // println!("xs: {}", xs);
     // let xs = xs.pad_with_zeros(3, 2, 2)?

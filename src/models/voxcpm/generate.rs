@@ -1,22 +1,36 @@
 use std::collections::HashMap;
 
+use aha_openai_dive::v1::resources::chat::{
+    ChatCompletionChunkResponse, ChatCompletionParameters, ChatCompletionResponse,
+};
 use anyhow::{Ok, Result};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use candle_core::{DType, Device, Tensor, pickle::read_all_with_key};
 use candle_nn::VarBuilder;
+use rocket::futures::{Stream, stream};
 
 use crate::{
-    models::voxcpm::{
-        audio_vae::AudioVAE,
-        config::{AudioVaeConfig, VoxCPMConfig},
-        model::VoxCPMModel,
-        tokenizer::SingleChineseTokenizer,
+    models::{
+        GenerateModel,
+        voxcpm::{
+            audio_vae::AudioVAE,
+            config::{AudioVaeConfig, VoxCPMConfig},
+            model::VoxCPMModel,
+            tokenizer::SingleChineseTokenizer,
+        },
     },
-    utils::{find_type_files, get_device, get_dtype},
+    utils::{
+        audio_utils::{extract_audio_url, get_audio_wav_u8},
+        build_audio_completion_response, extract_metadata_value, extract_user_text,
+        find_type_files, get_device, get_dtype,
+    },
 };
 
 pub struct VoxCPMGenerate {
     voxcpm: VoxCPMModel,
     prompt_cache: Option<HashMap<String, Tensor>>,
+    sample_rate: usize,
+    model_name: String,
 }
 
 impl VoxCPMGenerate {
@@ -47,6 +61,11 @@ impl VoxCPMGenerate {
                 decoder_rates: vec![8, 8, 5, 2],
                 sample_rate: 16000,
             },
+        };
+        let model_name = if audio_config.sample_rate == 16000 {
+            "VoxCPM".to_string()
+        } else {
+            "VoxCPM1.5".to_string()
         };
         let audio_vae = AudioVAE::new(
             vb_vae,
@@ -85,6 +104,8 @@ impl VoxCPMGenerate {
         Ok(Self {
             voxcpm,
             prompt_cache: None,
+            sample_rate: audio_config.sample_rate,
+            model_name,
         })
     }
 
@@ -135,7 +156,7 @@ impl VoxCPMGenerate {
         prompt_text: Option<String>,
         prompt_wav_path: Option<String>,
     ) -> Result<Tensor> {
-        let audio = self.generate(
+        let audio = self.inference(
             target_text,
             prompt_text,
             prompt_wav_path,
@@ -150,10 +171,10 @@ impl VoxCPMGenerate {
     }
     pub fn generate_simple(&mut self, target_text: String) -> Result<Tensor> {
         // let audio = self.generate(target_text, None, None, 2, 100, 10, 2.0, false, 6.0)?;
-        let audio = self.generate(target_text, None, None, 2, 100, 10, 2.0, 6.0)?;
+        let audio = self.inference(target_text, None, None, 2, 100, 10, 2.0, 6.0)?;
         Ok(audio)
     }
-    pub fn generate(
+    pub fn inference(
         &mut self,
         target_text: String,
         prompt_text: Option<String>,
@@ -177,5 +198,61 @@ impl VoxCPMGenerate {
             retry_badcase_ratio_threshold,
         )?;
         Ok(audio)
+    }
+}
+
+impl GenerateModel for VoxCPMGenerate {
+    fn generate(&mut self, mes: ChatCompletionParameters) -> Result<ChatCompletionResponse> {
+        let prompt_text = extract_metadata_value::<String>(&mes.metadata, "prompt_text");
+        let min_len = extract_metadata_value::<usize>(&mes.metadata, "min_len").unwrap_or(2);
+        let max_len = extract_metadata_value::<usize>(&mes.metadata, "max_len").unwrap_or(4096);
+        let inference_timesteps =
+            extract_metadata_value::<usize>(&mes.metadata, "inference_timesteps").unwrap_or(10);
+        let cfg_value = extract_metadata_value::<f64>(&mes.metadata, "cfg_value").unwrap_or(2.0);
+        let retry_badcase_ratio_threshold =
+            extract_metadata_value::<f64>(&mes.metadata, "retry_badcase_ratio_threshold")
+                .unwrap_or(6.0);
+        let target_text = extract_user_text(&mes)?;
+        let prompt_wav = extract_audio_url(&mes)?;
+        let prompt_wav_path = if !prompt_wav.is_empty() {
+            Some(prompt_wav[0].clone())
+        } else {
+            None
+        };
+        let audio = self.voxcpm.generate(
+            target_text,
+            prompt_text,
+            prompt_wav_path,
+            min_len,
+            max_len,
+            inference_timesteps,
+            cfg_value,
+            retry_badcase_ratio_threshold,
+        )?;
+        let wav_u8 = get_audio_wav_u8(&audio, self.sample_rate as u32)?;
+        let base64_audio = BASE64_STANDARD.encode(wav_u8);
+        let response = build_audio_completion_response(&base64_audio, &self.model_name);
+        Ok(response)
+    }
+    #[allow(unused_variables)]
+    fn generate_stream(
+        &mut self,
+        mes: ChatCompletionParameters,
+    ) -> Result<
+        Box<
+            dyn Stream<Item = Result<ChatCompletionChunkResponse, anyhow::Error>>
+                + Send
+                + Unpin
+                + '_,
+        >,
+    > {
+        let error_stream = stream::once(async {
+            Err(anyhow::anyhow!(format!(
+                "{} model not support stream",
+                self.model_name
+            ))) as Result<ChatCompletionChunkResponse, anyhow::Error>
+        });
+
+        Ok(Box::new(Box::pin(error_stream)))
     }
 }

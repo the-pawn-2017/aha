@@ -18,7 +18,8 @@ use crate::models::{
     deepseek_ocr::generate::DeepseekOCRGenerateModel,
     hunyuan_ocr::generate::HunyuanOCRGenerateModel, minicpm4::generate::MiniCPMGenerateModel,
     paddleocr_vl::generate::PaddleOCRVLGenerateModel, qwen2_5vl::generate::Qwen2_5VLGenerateModel,
-    qwen3vl::generate::Qwen3VLGenerateModel,
+    qwen3vl::generate::Qwen3VLGenerateModel, rmbg2_0::generate::RMBG2_0Model,
+    voxcpm::generate::VoxCPMGenerate,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -43,6 +44,12 @@ pub enum WhichModel {
     HunyuanOCR,
     #[value(name = "paddleocr-vl")]
     PaddleOCRVL,
+    #[value(name = "RMBG2.0")]
+    RMBG2_0,
+    #[value(name = "voxcpm")]
+    VoxCPM,
+    #[value(name = "voxcpm1.5")]
+    VoxCPM1_5,
 }
 
 pub trait GenerateModel {
@@ -67,6 +74,8 @@ pub enum ModelInstance<'a> {
     DeepSeekOCR(DeepseekOCRGenerateModel),
     HunyuanOCR(HunyuanOCRGenerateModel<'a>),
     PaddleOCRVL(Box<PaddleOCRVLGenerateModel<'a>>),
+    RMBG2_0(Box<RMBG2_0Model>),
+    VoxCPM(Box<VoxCPMGenerate>),
 }
 
 impl<'a> GenerateModel for ModelInstance<'a> {
@@ -78,6 +87,8 @@ impl<'a> GenerateModel for ModelInstance<'a> {
             ModelInstance::DeepSeekOCR(model) => model.generate(mes),
             ModelInstance::HunyuanOCR(model) => model.generate(mes),
             ModelInstance::PaddleOCRVL(model) => model.generate(mes),
+            ModelInstance::RMBG2_0(model) => model.generate(mes),
+            ModelInstance::VoxCPM(model) => model.generate(mes),
         }
     }
 
@@ -99,6 +110,8 @@ impl<'a> GenerateModel for ModelInstance<'a> {
             ModelInstance::DeepSeekOCR(model) => model.generate_stream(mes),
             ModelInstance::HunyuanOCR(model) => model.generate_stream(mes),
             ModelInstance::PaddleOCRVL(model) => model.generate_stream(mes),
+            ModelInstance::RMBG2_0(model) => model.generate_stream(mes),
+            ModelInstance::VoxCPM(model) => model.generate_stream(mes),
         }
     }
 }
@@ -144,6 +157,18 @@ pub fn load_model(model_type: WhichModel, path: &str) -> Result<ModelInstance<'_
         WhichModel::PaddleOCRVL => {
             let model = PaddleOCRVLGenerateModel::init(path, None, None)?;
             ModelInstance::PaddleOCRVL(Box::new(model))
+        }
+        WhichModel::RMBG2_0 => {
+            let model = RMBG2_0Model::init(path, None, None)?;
+            ModelInstance::RMBG2_0(Box::new(model))
+        }
+        WhichModel::VoxCPM => {
+            let model = VoxCPMGenerate::init(path, None, None)?;
+            ModelInstance::VoxCPM(Box::new(model))
+        }
+        WhichModel::VoxCPM1_5 => {
+            let model = VoxCPMGenerate::init(path, None, None)?;
+            ModelInstance::VoxCPM(Box::new(model))
         }
     };
     Ok(model)

@@ -1,11 +1,21 @@
-use std::f64::consts::PI;
-use std::path::Path;
+use std::fs::File;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::{f64::consts::PI, io::Cursor};
 
+use aha_openai_dive::v1::resources::chat::{
+    ChatCompletionParameters, ChatCompletionResponse, ChatMessage, ChatMessageContent,
+    ChatMessageContentPart,
+};
 use anyhow::{Result, anyhow};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use candle_core::{D, Device, Tensor};
 use candle_nn::{Conv1d, Conv1dConfig, Module};
 use hound::{SampleFormat, WavReader};
 use num::integer::gcd;
+
+use crate::utils::get_default_save_dir;
 
 // 重采样方法枚举
 #[derive(Debug, Clone, Copy)]
@@ -213,9 +223,62 @@ pub fn resample_simple(waveform: &Tensor, orig_freq: i64, new_freq: i64) -> Resu
         None,
     )
 }
+pub fn load_audio_from_url(url: &str) -> Result<PathBuf> {
+    tokio::task::block_in_place(|| {
+        let client = reqwest::blocking::Client::new();
+        let response = client.get(url).send()?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to download file: {}",
+                response.status()
+            ));
+        }
+        let temp_dir = get_default_save_dir().expect("Failed to get home directory");
+        let temp_dir = PathBuf::from(temp_dir);
+        let temp_path = temp_dir.join("temp_audio.wav");
 
-pub fn load_audio<P: AsRef<Path>>(path: P, device: Device) -> Result<(Tensor, usize)> {
-    let mut reader = WavReader::open(path)?;
+        let mut file = std::fs::File::create(&temp_path)?;
+        let mut content = Cursor::new(response.bytes()?);
+        std::io::copy(&mut content, &mut file)?;
+
+        // Return the temp directory to keep it alive until the function ends
+        Ok(temp_path)
+    })
+}
+
+pub fn get_audio_path(path_str: &str) -> Result<PathBuf> {
+    if path_str.starts_with("http://") || path_str.starts_with("https://") {
+        // Download file from network
+        load_audio_from_url(path_str)
+    } else if path_str.starts_with("file://") {
+        // Convert file:// URL to local path
+        let path = url::Url::parse(path_str)?;
+        let path = path.to_file_path();
+        let path = match path {
+            Ok(path) => path,
+            Err(_) => {
+                let mut path = path_str.to_owned();
+                path = path.split_off(7);
+                PathBuf::from(path)
+            }
+        };
+        Ok(path)
+    } else if path_str.starts_with("data:audio") && path_str.contains("base64,") {
+        let data: Vec<&str> = path_str.split("base64,").collect();
+        let data = data[1];
+        let temp_dir = get_default_save_dir().expect("Failed to get home directory");
+        let temp_dir = PathBuf::from(temp_dir);
+        let temp_path = temp_dir.join("temp_audio.wav");
+        save_audio_from_base64(data, &temp_path)?;
+        Ok(temp_path)
+    } else {
+        Err(anyhow::anyhow!("get audio path error {}", path_str))
+    }
+}
+
+pub fn load_audio(path: &str, device: Device) -> Result<(Tensor, usize)> {
+    let audio_path = get_audio_path(path)?;
+    let mut reader = WavReader::open(audio_path)?;
     let spec = reader.spec();
     let samples: Vec<f32> = match spec.sample_format {
         SampleFormat::Int => {
@@ -264,8 +327,8 @@ pub fn load_audio<P: AsRef<Path>>(path: P, device: Device) -> Result<(Tensor, us
     Ok((audio_tensor, sample_rate as usize))
 }
 
-pub fn load_audio_with_resample<P: AsRef<Path>>(
-    path: P,
+pub fn load_audio_with_resample(
+    path: &str,
     device: Device,
     target_sample_rate: Option<usize>,
 ) -> Result<Tensor> {
@@ -298,4 +361,115 @@ pub fn save_wav(audio: &Tensor, save_path: &str, sample_rate: u32) -> Result<()>
     }
     writer.finalize().unwrap();
     Ok(())
+}
+
+pub fn get_audio_wav_u8(audio: &Tensor, sample_rate: u32) -> Result<Vec<u8>> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    assert_eq!(audio.dim(0)?, 1, "audio channel must be 1");
+    let max = audio.abs()?.max_all()?;
+    let max = max.to_scalar::<f32>()?;
+    let ratio = if max > 1.0 { 32767.0 / max } else { 32767.0 };
+    let audio = audio.squeeze(0)?;
+    let audio_vec = audio.to_vec1::<f32>()?;
+    let mut cursor = Cursor::new(Vec::new());
+    let mut writer = hound::WavWriter::new(&mut cursor, spec)?;
+    for i in audio_vec {
+        let sample_i16 = (i * ratio).round() as i16;
+        writer.write_sample(sample_i16)?;
+    }
+    writer.finalize()?;
+    let wav_buffer = cursor.into_inner();
+    Ok(wav_buffer)
+}
+
+pub fn extract_audio_url(mes: &ChatCompletionParameters) -> Result<Vec<String>> {
+    let mut audio_vec = Vec::new();
+    for chat_mes in mes.messages.clone() {
+        if let ChatMessage::User { content, .. } = chat_mes.clone()
+            && let ChatMessageContent::ContentPart(part_vec) = content
+        {
+            for part in part_vec {
+                if let ChatMessageContentPart::Audio(audio_part) = part {
+                    let audio_url = audio_part.audio_url;
+                    audio_vec.push(audio_url.url);
+                }
+            }
+        }
+        // if let ChatMessage::User { content, .. } = chat_mes.clone()
+        //     && let ChatMessageContent::ContentPart(part_vec) = content
+        // {
+        //     for part in part_vec {
+        //         if let ChatMessageContentPart::Text(text_part) = part {
+        //             let text = text_part.text;
+        //             if text.chars().count() > 0 {
+        //                 ret = ret + &text + "\n"
+        //             }
+        //         }
+        //     }
+        // }
+    }
+    Ok(audio_vec)
+}
+
+// 从 ChatCompletionResponse 中提取音频数据
+pub fn extract_audio_base64_from_response(
+    response: &ChatCompletionResponse,
+) -> Result<Vec<String>> {
+    let mut audio_data_list = Vec::new();
+
+    for choice in &response.choices {
+        if let ChatMessage::Assistant {
+            content: Some(ChatMessageContent::ContentPart(parts)),
+            ..
+        } = &choice.message
+        {
+            for part in parts.clone() {
+                if let ChatMessageContentPart::Audio(audio_part) = part {
+                    // if let Some(audio_data) = &audio_part.audio_url {
+                    //     audio_data_list.push(audio_data.data.clone());
+                    // }
+                    let audio_url = audio_part.audio_url;
+                    audio_data_list.push(audio_url.url);
+                }
+            }
+        }
+    }
+
+    Ok(audio_data_list)
+}
+
+// 将 base64 音频数据解码并保存到文件
+pub fn save_audio_from_base64<P: AsRef<Path>>(base64_data: &str, file_path: P) -> Result<()> {
+    // 解码 base64 数据
+    let data: Vec<&str> = base64_data.split("base64,").collect();
+    let data = data[1];
+    let decoded_data = BASE64_STANDARD.decode(data)?;
+
+    // 创建文件并写入数据
+    let mut file = File::create(file_path)?;
+    file.write_all(&decoded_data)?;
+
+    Ok(())
+}
+
+// 组合函数：从响应中提取音频并保存到文件
+pub fn extract_and_save_audio_from_response(
+    response: &ChatCompletionResponse,
+    directory: &str,
+) -> Result<Vec<String>> {
+    let audio_data_list = extract_audio_base64_from_response(response)?;
+    let mut saved_files = Vec::new();
+
+    for (index, audio_data) in audio_data_list.iter().enumerate() {
+        let file_path = format!("{}/audio_{}.wav", directory, index);
+        save_audio_from_base64(audio_data, &file_path)?;
+        saved_files.push(file_path);
+    }
+
+    Ok(saved_files)
 }

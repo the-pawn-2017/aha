@@ -49,9 +49,8 @@ dependencies = [
 
 [[package]]
 name = "aha_openai_dive"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45b54fac70f40807364efeb885a33150e163d86b9db687820ba3c5f06aeeaf6e"
+version = "1.4.0"
+source = "git+https://github.com/jhqxxx/openai-client.git#023a3b07244e73605e89d6d457d76fa24217c9de"
 dependencies = [
  "bytes",
  "derive_builder",
