@@ -134,8 +134,10 @@ fn hunyuanocr_weight() -> Result<()> {
 
 #[test]
 fn glm_asr_nano_weight() -> Result<()> {
-    let model_path = "/home/jhq/huggingface_model/ZhipuAI/GLM-ASR-Nano-2512/";
-    let model_list = find_type_files(model_path, "safetensors")?;
+    let save_dir =
+        aha::utils::get_default_save_dir().ok_or(anyhow::anyhow!("Failed to get save dir"))?;
+    let model_path = format!("{}/ZhipuAI/GLM-ASR-Nano-2512/", save_dir);
+    let model_list = find_type_files(&model_path, "safetensors")?;
 
     let device = Device::Cpu;
     for m in &model_list {
