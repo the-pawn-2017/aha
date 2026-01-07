@@ -8,6 +8,7 @@ fn messy_test() -> Result<()> {
     // let path = get_default_save_dir();
     let x = Tensor::arange(0.0, 9.0, device)?;
     println!("x: {}", x);
+
     // let x = x
     //     .unsqueeze(0)?
     //     .unsqueeze(0)?
