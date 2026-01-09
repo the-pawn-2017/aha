@@ -8,6 +8,7 @@ use aha_openai_dive::v1::resources::chat::{
     ChatMessageContentPart,
 };
 use anyhow::{Result, anyhow};
+// use audioadapter_buffers::direct::InterleavedSlice;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use candle_core::{D, DType, Device, IndexOp, Tensor};
@@ -18,6 +19,10 @@ use hound::{SampleFormat, WavReader};
 use num::integer::gcd;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use realfft::RealFftPlanner;
+// use rubato::{
+//     Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
+//     WindowFunction,
+// };
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
@@ -25,11 +30,6 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-// use rubato::{
-//     Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
-//     WindowFunction,
-// };
-// use audioadapter_buffers::direct::InterleavedSlice;
 use crate::utils::get_default_save_dir;
 use crate::utils::tensor_utils::linspace;
 
@@ -351,56 +351,6 @@ pub fn get_audio_bytes_vec(path_str: &str) -> Result<Vec<u8>> {
     }
 }
 
-pub fn load_audio_mono_vec(path: &str) -> Result<(Vec<f32>, usize)> {
-    let audio_path = get_audio_path(path)?;
-    let mut reader = WavReader::open(audio_path)?;
-    let spec = reader.spec();
-    let samples: Vec<f32> = match spec.sample_format {
-        SampleFormat::Int => {
-            // 将整数样本转换为浮点数 [-1.0, 1.0]
-            // println!("spec.bits_per_sample: {}", spec.bits_per_sample);
-            match spec.bits_per_sample {
-                8 => reader
-                    .samples::<i8>()
-                    .map(|s| s.map(|sample| sample as f32 / i8::MAX as f32))
-                    .collect::<Result<Vec<_>, _>>()?,
-                16 => reader
-                    .samples::<i16>()
-                    .map(|s| s.map(|sample| sample as f32 / i16::MAX as f32))
-                    .collect::<Result<Vec<_>, _>>()?,
-                24 => reader
-                    .samples::<i32>()
-                    .map(|s| s.map(|sample| sample as f32 / 8388607.0))
-                    .collect::<Result<Vec<_>, _>>()?,
-                _ => {
-                    return Err(anyhow::anyhow!(
-                        "Unsupported bit depth: {}",
-                        spec.bits_per_sample
-                    ));
-                }
-            }
-        }
-        SampleFormat::Float => {
-            // 直接读取浮点数样本
-            reader.samples::<f32>().collect::<Result<Vec<_>, _>>()?
-        }
-    };
-    let mono_samples = if spec.channels == 2 {
-        let mut mono = Vec::with_capacity(samples.len() / 2);
-        for chunk in samples.chunks(2) {
-            if chunk.len() == 2 {
-                mono.push((chunk[0] + chunk[1]) / 2.0);
-            }
-        }
-        mono
-    } else if spec.channels == 1 {
-        samples
-    } else {
-        return Err(anyhow::anyhow!("only supported mono or stereo"));
-    };
-    let sample_rate = spec.sample_rate as usize;
-    Ok((mono_samples, sample_rate))
-}
 
 pub fn load_audio_use_hound(audio_path: PathBuf, device: &Device) -> Result<(Tensor, usize)> {
     let mut reader = WavReader::open(audio_path)?;
@@ -698,6 +648,12 @@ pub fn extract_audios(
     //         .map(|url| load_and_resample_audio_ffmpeg(url, target_sample_rate, device))
     //         .collect()
     // }
+
+    // 使用rubato重采样
+    // audio_url_vec
+    //     .par_iter()
+    //     .map(|url| load_and_resample_audio_rubato(url, device, target_sample_rate))
+    //     .collect()
 }
 
 // 从 ChatCompletionResponse 中提取音频数据
@@ -892,60 +848,71 @@ pub fn load_and_resample_audio_ffmpeg(
     Ok(audio_tensor)
 }
 
+// // 使用rubato库做重采样
 // pub fn load_and_resample_audio_rubato(
-//     file_path: &str,
-//     target_sample_rate: usize,
+//     path: &str,
 //     device: &Device,
+//     target_sample_rate: Option<usize>,
 // ) -> Result<Tensor> {
-//     let (mono_audio, ori_sample_rate) = load_audio_mono_vec(file_path)?;
-//     let params = SincInterpolationParameters {
-//         sinc_len: 256,
-//         f_cutoff: 0.95,
-//         interpolation: SincInterpolationType::Cubic,
-//         oversampling_factor: 256,
-//         window: WindowFunction::BlackmanHarris2,
-//     };
-//     let input_len = mono_audio.len();
-//     let mut resampler = Async::<f64>::new_sinc(
-//         target_sample_rate as f64 / ori_sample_rate as f64, // 重采样比例
-//         1.0,                                                // 输出/输入采样率比
-//         &params,
-//         input_len,
-//         1, // 单通道
-//         FixedAsync::Input,
-//     )
-//     .map_err(|e| anyhow!(format!("无法创建重采样器: {}", e)))?;
+//     let audio_vec = get_audio_bytes_vec(path)?;
+//     let (mut audio, sr) = load_audio_use_symphonia(audio_vec, device)?;
+//     let mono_audio = audio.squeeze(0)?.to_vec1::<f32>()?;
+//     if let Some(target_sample_rate) = target_sample_rate
+//         && target_sample_rate != sr
+//     {
+//         let params = SincInterpolationParameters {
+//             sinc_len: 256,
+//             f_cutoff: 0.99,
+//             interpolation: SincInterpolationType::Cubic,
+//             oversampling_factor: 256,
+//             window: WindowFunction::BlackmanHarris2,
+//         };
+//         let input_len = mono_audio.len();
+//         let mut resampler = Async::<f64>::new_sinc(
+//             target_sample_rate as f64 / sr as f64, // 重采样比例
+//             1.0,                                   // 输出/输入采样率比
+//             &params,
+//             input_len,
+//             1, // 单通道
+//             FixedAsync::Input,
+//         )
+//         .map_err(|e| anyhow!(format!("无法创建重采样器: {}", e)))?;
 
-//     let mono_audio: Vec<f64> = mono_audio.iter().map(|x| *x as f64).collect();
-//     let input_adapter = InterleavedSlice::new(&mono_audio, 1, input_len)?;
+//         let audio_f64: Vec<f64> = mono_audio.iter().map(|x| *x as f64).collect();
+//         let input_adapter = InterleavedSlice::new(&audio_f64, 1, input_len)?;
 
-//     let mut outdata = vec![0.0f64; input_len * 2];
-//     let mut output_adapter = InterleavedSlice::new_mut(&mut outdata, 1, input_len * 2)?;
-//     // Preparations
-//     let mut indexing = Indexing {
-//         input_offset: 0,
-//         output_offset: 0,
-//         active_channels_mask: None,
-//         partial_len: None,
-//     };
-//     let mut input_frames_left = input_len;
-//     let mut input_frames_next = resampler.input_frames_max();
-//     while input_frames_left >= input_frames_next {
-//         let (frames_read, frames_written) =
-//             resampler.process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))?;
-//         indexing.input_offset += frames_read;
-//         indexing.output_offset += frames_written;
-//         input_frames_left -= frames_read;
-//         input_frames_next = resampler.input_frames_next();
+//         let mut outdata = vec![0.0f64; input_len * 2];
+//         let mut output_adapter = InterleavedSlice::new_mut(&mut outdata, 1, input_len * 2)?;
+//         // Preparations
+//         let mut indexing = Indexing {
+//             input_offset: 0,
+//             output_offset: 0,
+//             active_channels_mask: None,
+//             partial_len: None,
+//         };
+//         let mut input_frames_left = input_len;
+//         let mut input_frames_next = resampler.input_frames_max();
+//         while input_frames_left >= input_frames_next {
+//             let (frames_read, frames_written) = resampler.process_into_buffer(
+//                 &input_adapter,
+//                 &mut output_adapter,
+//                 Some(&indexing),
+//             )?;
+//             indexing.input_offset += frames_read;
+//             indexing.output_offset += frames_written;
+//             input_frames_left -= frames_read;
+//             input_frames_next = resampler.input_frames_next();
+//         }
+//         indexing.partial_len = Some(input_frames_left);
+//         let (_nbr_in, _nbr_out) = resampler
+//             .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
+//             .unwrap();
+//         let output_len = input_len * target_sample_rate / sr;
+//         audio = Tensor::new(&outdata[0..output_len], device)?
+//             .to_dtype(candle_core::DType::F32)?
+//             .unsqueeze(0)?;
 //     }
-//     indexing.partial_len = Some(input_frames_left);
-//     let (_nbr_in, _nbr_out) = resampler
-//         .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
-//         .unwrap();
-//     let output_len = input_len * target_sample_rate / ori_sample_rate;
-//     let audio_tensor =
-//         Tensor::new(&outdata[0..output_len], device)?.to_dtype(candle_core::DType::F32)?;
-//     Ok(audio_tensor)
+//     Ok(audio)
 // }
 
 pub fn create_hann_window(window_size: usize, dtype: DType, device: &Device) -> Result<Tensor> {

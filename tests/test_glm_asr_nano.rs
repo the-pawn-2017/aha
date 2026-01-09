@@ -22,7 +22,7 @@ fn glm_asr_nano_generate() -> Result<()> {
                         "type": "audio",
                         "audio_url": 
                         {
-                            "url": "https://sis-sample-audio.obs.cn-north-1.myhuaweicloud.com/16k16bit.mp3"
+                            "url": "https://package-release.coderbox.cn/aiway/test/other/%E5%93%AA%E5%90%92.wav"
                         }
                     },           
                     {
