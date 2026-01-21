@@ -53,6 +53,8 @@ enum Commands {
     Serv(ServArgs),
     /// Download model only
     Download(DownloadArgs),
+    /// Run model inference directly
+    Run(RunArgs),
 }
 
 /// Common/shared arguments for server operations
@@ -115,6 +117,26 @@ struct DownloadArgs {
     /// Download retry count
     #[arg(long)]
     download_retries: Option<u32>,
+}
+
+/// Arguments for the 'run' subcommand (direct inference)
+#[derive(Args, Debug)]
+struct RunArgs {
+    /// Model type (required)
+    #[arg(short, long)]
+    model: WhichModel,
+
+    /// Input text or file path
+    #[arg(short, long)]
+    input: String,
+
+    /// Output file path (optional)
+    #[arg(short, long)]
+    output: Option<String>,
+
+    /// Local model weight path (required)
+    #[arg(long, required = true)]
+    weight_path: String,
 }
 
 async fn download_model(model_id: &str, save_dir: &str, max_retries: u32) -> anyhow::Result<()> {
@@ -222,6 +244,82 @@ async fn run_download(args: DownloadArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Run the 'run' subcommand: direct model inference
+fn run_run(args: RunArgs) -> anyhow::Result<()> {
+    use aha::exec::ExecModel;
+
+    let RunArgs { model, input, output, weight_path } = args;
+
+    match model {
+        WhichModel::MiniCPM4_0_5B => {
+            use aha::exec::minicpm4::MiniCPM4Exec;
+            MiniCPM4Exec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen2_5vl3B => {
+            use aha::exec::qwen2_5vl::Qwen2_5vlExec;
+            Qwen2_5vlExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen2_5vl7B => {
+            use aha::exec::qwen2_5vl::Qwen2_5vlExec;
+            Qwen2_5vlExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen3_0_6B => {
+            use aha::exec::qwen3::Qwen3Exec;
+            Qwen3Exec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen3vl2B => {
+            use aha::exec::qwen3vl::Qwen3vlExec;
+            Qwen3vlExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen3vl4B => {
+            use aha::exec::qwen3vl::Qwen3vlExec;
+            Qwen3vlExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen3vl8B => {
+            use aha::exec::qwen3vl::Qwen3vlExec;
+            Qwen3vlExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::Qwen3vl32B => {
+            use aha::exec::qwen3vl::Qwen3vlExec;
+            Qwen3vlExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::DeepSeekOCR => {
+            use aha::exec::deepseek_ocr::DeepSeekORExec;
+            DeepSeekORExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::HunyuanOCR => {
+            use aha::exec::hunyuan_ocr::HunyuanORExec;
+            HunyuanORExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::PaddleOCRVL => {
+            use aha::exec::paddleocr_vl::PaddleOVLExec;
+            PaddleOVLExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::RMBG2_0 => {
+            use aha::exec::rmbg2_0::RMBG2_0Exec;
+            RMBG2_0Exec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::VoxCPM => {
+            use aha::exec::voxcpm::VoxCPMExec;
+            VoxCPMExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::VoxCPM1_5 => {
+            use aha::exec::voxcpm1_5::VoxCPM1_5Exec;
+            VoxCPM1_5Exec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::GlmASRNano2512 => {
+            use aha::exec::glm_asr_nano::GlmASRNanoExec;
+            GlmASRNanoExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+        WhichModel::FunASRNano2512 => {
+            use aha::exec::fun_asr_nano::FunASRNanoExec;
+            FunASRNanoExec::run(&input, output.as_deref(), &weight_path)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -230,6 +328,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Cli(args)) => run_cli(args).await,
         Some(Commands::Serv(args)) => run_serv(args).await,
         Some(Commands::Download(args)) => run_download(args).await,
+        Some(Commands::Run(args)) => run_run(args),
         None => {
             // Backward compatibility: when no subcommand is provided, use 'cli' behavior
             let model = cli.model.expect("Model is required (use -m or --model)");

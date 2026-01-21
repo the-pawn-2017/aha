@@ -1,18 +1,17 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Added
 
-- **CLI Subcommand Support**: Added three new subcommands for better command organization:
-  - `aha cli` - Download model and start HTTP service (default, backward compatible)
-  - `aha serv` - Start HTTP service only (requires `--weight-path`)
-  - `aha download` - Download model only (no service start)
+- **CLI `run` Subcommand**: Direct model inference from CLI without HTTP service overhead:
+  - `aha run` - Run model inference directly
+  - `-m, --model <MODEL>` - Specify which model to use
+  - `-in, --input <INPUT>` - Input text or file path (model-specific interpretation)
+  - `-out, --output <OUTPUT>` - Output file path (optional, auto-generated if not specified)
+  - `--weight-path <WEIGHT_PATH>` - Local model weight path (required)
+
 
 ### Changed
 

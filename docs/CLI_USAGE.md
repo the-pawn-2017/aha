@@ -59,6 +59,46 @@ aha cli -m qwen3vl-2b --weight-path /path/to/model
 aha -m qwen3vl-2b
 ```
 
+### run - 直接模型推理
+
+直接运行模型推理，无需启动 HTTP 服务。适用于一次性推理任务或批处理。
+
+**语法：**
+```bash
+aha run [OPTIONS] --model <MODEL> --input <INPUT> --weight-path <WEIGHT_PATH>
+```
+
+**选项：**
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `-m, --model <MODEL>` | 模型类型（必选） | - |
+| `-in, --input <INPUT>` | 输入文本或文件路径（模型特定解释） | - |
+| `-out, --output <OUTPUT>` | 输出文件路径（可选，未指定则自动生成） | - |
+| `--weight-path <WEIGHT_PATH>` | 本地模型权重路径（必选） | - |
+
+**示例：**
+
+```bash
+# VoxCPM1.5 文字转语音
+aha run -m voxcpm1.5 -in "太阳当空照" -out output.wav --weight-path /path/to/model
+
+# VoxCPM1.5 从文件读取输入
+aha run -m voxcpm1.5 -in "file://./input.txt" --weight-path /path/to/model
+
+# MiniCPM4 文本生成
+aha run -m minicpm4-0.5b -in "你好" --weight-path /path/to/model
+
+# DeepSeek OCR 图片识别
+aha run -m deepseek-ocr -in "image.jpg" --weight-path /path/to/model
+
+# RMBG2.0 背景移除
+aha run -m RMBG2.0 -in "photo.png" -out "no_bg.png" --weight-path /path/to/model
+
+# GLM-ASR 语音识别
+aha run -m glm-asr-nano-2512 -in "audio.wav" -in "请转写这段音频" --weight-path /path/to/model
+```
+
 ### serv - 启动服务
 
 仅启动 HTTP 服务，不下载模型。必须通过 `--weight-path` 指定本地模型路径。
