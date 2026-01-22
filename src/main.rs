@@ -1,7 +1,7 @@
 use std::{net::IpAddr, str::FromStr, time::Duration};
 
 use aha::{models::WhichModel, utils::get_default_save_dir};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use modelscope::ModelScope;
 use rocket::{
     Config,
@@ -55,6 +55,8 @@ enum Commands {
     Download(DownloadArgs),
     /// Run model inference directly
     Run(RunArgs),
+    /// List all supported models
+    List,
 }
 
 /// Common/shared arguments for server operations
@@ -194,6 +196,41 @@ fn get_model_id(model: WhichModel) -> &'static str {
     }
 }
 
+/// List all supported models
+fn run_list() -> anyhow::Result<()> {
+    let models = [
+        WhichModel::MiniCPM4_0_5B,
+        WhichModel::Qwen2_5vl3B,
+        WhichModel::Qwen2_5vl7B,
+        WhichModel::Qwen3_0_6B,
+        WhichModel::Qwen3vl2B,
+        WhichModel::Qwen3vl4B,
+        WhichModel::Qwen3vl8B,
+        WhichModel::Qwen3vl32B,
+        WhichModel::DeepSeekOCR,
+        WhichModel::HunyuanOCR,
+        WhichModel::PaddleOCRVL,
+        WhichModel::RMBG2_0,
+        WhichModel::VoxCPM,
+        WhichModel::VoxCPM1_5,
+        WhichModel::GlmASRNano2512,
+        WhichModel::FunASRNano2512,
+    ];
+
+    println!("Available models:");
+    println!();
+    println!("{:<30} {}", "Model Name", "ModelScope ID");
+    println!("{}", "-".repeat(80));
+    for model in models {
+        let possible_value = model.to_possible_value().unwrap();
+        let name = possible_value.get_name();
+        let id = get_model_id(model);
+        println!("{:<30} {}", name, id);
+    }
+
+    Ok(())
+}
+
 /// Run the 'cli' subcommand: download model (if needed) and start service
 async fn run_cli(args: CliArgs) -> anyhow::Result<()> {
     let CliArgs { common, weight_path, save_dir, download_retries } = args;
@@ -329,6 +366,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Serv(args)) => run_serv(args).await,
         Some(Commands::Download(args)) => run_download(args).await,
         Some(Commands::Run(args)) => run_run(args),
+        Some(Commands::List) => run_list(),
         None => {
             // Backward compatibility: when no subcommand is provided, use 'cli' behavior
             let model = cli.model.expect("Model is required (use -m or --model)");
