@@ -16,9 +16,13 @@
     - 模型：[Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct) 开源协议：[Qwen RESEARCH LICENSE AGREEMENT](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/blob/main/LICENSE)
     - 模型：[Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
 * [MiniCPM4](https://huggingface.co/collections/openbmb/minicpm4) - 面壁智能 MiniCPM 系列语言模型
-    - 模型：[MiniCPM4-0.5B](https://huggingface.co/openbmb/MiniCPM4-0.5B) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+    - 模型：
+    	- huggingface: [MiniCPM4-0.5B](https://huggingface.co/openbmb/MiniCPM4-0.5B)  开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+        - AtomGit: [MiniCPM4-0.5B](https://ai.atomgit.com/OpenBMB/MiniCPM4-0.5B)
 * [VoxCPM](https://huggingface.co/collections/openbmb/voxcpm) - 面壁智能语音生成模型
-    - 模型：[VoxCPM-0.5B](https://huggingface.co/openbmb/VoxCPM-0.5B) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+    - 模型：
+    	- huggingface: [VoxCPM-0.5B](https://huggingface.co/openbmb/VoxCPM-0.5B) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+        - AtomGit: [VoxCPM-0.5B](https://ai.atomgit.com/OpenBMB/VoxCPM-0.5B)
 * [Qwen3VL](https://huggingface.co/collections/Qwen/qwen3-vl) - 阿里通义千问 3 多模态大语言模型
     - 模型：[Qwen3-VL-2B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
     - 模型：[Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
@@ -27,15 +31,23 @@
 * DeepSeek-OCR - 深度求索光学文字识别模型
     - 模型：[DeepSeek-OCR](https://huggingface.co/deepseek-ai/DeepSeek-OCR) 开源协议：[MIT](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/mit.md)
 * Hunyuan-OCR - 腾讯混元光学文字识别模型
-    - 模型：[HunyuanOCR](https://huggingface.co/tencent/HunyuanOCR) 开源协议：[TENCENT HUNYUAN COMMUNITY LICENSE AGREEMENT](https://huggingface.co/tencent/HunyuanOCR/blob/main/LICENSE)
+    - 模型：
+    	- huggingface: [HunyuanOCR](https://huggingface.co/tencent/HunyuanOCR) 开源协议：[TENCENT HUNYUAN COMMUNITY LICENSE AGREEMENT](https://huggingface.co/tencent/HunyuanOCR/blob/main/LICENSE)
+        - AtomGit: [HunyuanOCR](https://ai.atomgit.com/tencent_hunyuan/HunyuanOCR)
 * [PaddleOCR-VL](https://huggingface.co/collections/PaddlePaddle/paddleocr-vl) - 百度飞桨光学文字识别模型
-    - 模型：[PaddleOCR-VL](https://huggingface.co/PaddlePaddle/PaddleOCR-VL) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+    - 模型：
+    	- huggingface: [PaddleOCR-VL](https://huggingface.co/PaddlePaddle/PaddleOCR-VL) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+        - AtomGit: [PaddleOCR-VL](https://ai.atomgit.com/paddlepaddle/PaddleOCR-VL)
 * [VoxCPM1.5](https://huggingface.co/collections/openbmb/voxcpm) - 面壁智能语音生成模型1.5版本
-    - 模型：[VoxCPM1.5](https://huggingface.co/openbmb/VoxCPM1.5) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+    - 模型：
+    	- huggingface: [VoxCPM1.5](https://huggingface.co/openbmb/VoxCPM1.5) 开源协议：[Apache license 2.0](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md)
+        - AtomGit: [VoxCPM1.5](https://ai.atomgit.com/OpenBMB/VoxCPM1.5)
 * [RMBG2.0](https://huggingface.co/collections/briaai/rmbg) - RMBGv2.0由BRIA AI开发，供非商业用途使用。
     - 模型：[RMBG2.0](https://huggingface.co/briaai/RMBG-2.0) 开源协议：[Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/deed.en)
 * GLM-ASR-Nano-2512 - 智谱AI语音识别模型
-    - 模型：[GLM-ASR-Nano-2512](https://huggingface.co/zai-org/GLM-ASR-Nano-2512) 开源协议：[MIT](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/mit.md)
+    - 模型：
+    	- huggingface: [GLM-ASR-Nano-2512](https://huggingface.co/zai-org/GLM-ASR-Nano-2512) 开源协议：[MIT](https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/mit.md)
+        - AtomGit: [GLM-ASR-Nano-2512](https://ai.atomgit.com/zai-org/GLM-ASR-Nano-2512)
 * Fun-ASR-Nano-2512 - 通义百聆语音识别模型
     - 模型:[Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512) 开源协议未标明
 * [Qwen3](https://huggingface.co/collections/Qwen/qwen3) - 通义千问 Qwen3系列语言模型
