@@ -200,6 +200,7 @@ fn qwen3_weight() -> Result<()> {
 
 #[test]
 fn index_tts2_weight() -> Result<()> {
+    // RUST_BACKTRACE=1 cargo test -F cuda index_tts2_weight -r -- --nocapture
     let save_dir: String =
         aha::utils::get_default_save_dir().ok_or(anyhow::anyhow!("Failed to get save dir"))?;
     let model_path = format!("{}/IndexTeam/IndexTTS-2/", save_dir); 

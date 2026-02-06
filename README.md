@@ -62,6 +62,13 @@
 ⭐ 如果这个项目对你有帮助，请给我们一个 Star！
 
 ## 环境依赖
+* cmake: 
+    * ubuntu/WSL
+    ```bash
+    sudo apt-get update
+    sudo apt-get install cmake
+    ```
+    
 * 启用ffmpeg的feature时：
     * ubuntu/WSL
     ```bash

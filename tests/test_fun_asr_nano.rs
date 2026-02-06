@@ -21,7 +21,7 @@ fn fun_asr_nano_generate() -> Result<()> {
                         "type": "audio",
                         "audio_url": 
                         {
-                            "url": "https://package-release.coderbox.cn/aiway/test/other/%E5%93%AA%E5%90%92.wav"
+                            "url": "file://./assets/audio/zh.mp3"
                         }
                     },           
                     {

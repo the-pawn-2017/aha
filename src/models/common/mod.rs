@@ -2,9 +2,9 @@ use anyhow::{Result, anyhow};
 use candle_core::{D, IndexOp, Tensor};
 use candle_nn::{
     Activation, BatchNorm, BatchNormConfig, Conv1d, Conv1dConfig, Conv2d, Conv2dConfig,
-    ConvTranspose1d, ConvTranspose1dConfig, Embedding, LayerNorm, LayerNormConfig, Linear, Module,
-    ModuleT, RmsNorm, VarBuilder, batch_norm, conv1d, conv1d_no_bias, conv2d, conv2d_no_bias,
-    embedding, layer_norm, linear_b, linear_no_bias, ops::sigmoid, rms_norm,
+    ConvTranspose1d, ConvTranspose1dConfig, Embedding, GroupNorm, Init, LayerNorm, LayerNormConfig,
+    Linear, Module, ModuleT, RmsNorm, VarBuilder, batch_norm, conv1d, conv1d_no_bias, conv2d,
+    conv2d_no_bias, embedding, layer_norm, linear_b, linear_no_bias, ops::sigmoid, rms_norm,
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
@@ -464,9 +464,10 @@ impl NaiveAttnTwoLinearMLPBlock {
             linear2_pp_name,
         )?;
 
-        let input_layernorm = get_layer_norm(vb.pp(input_norm_pp_name), norm_eps, hidden_size)?;
+        let input_layernorm =
+            get_layer_norm(vb.pp(input_norm_pp_name), norm_eps, hidden_size, true)?;
         let post_attention_layernorm =
-            get_layer_norm(vb.pp(post_norm_pp_name), norm_eps, hidden_size)?;
+            get_layer_norm(vb.pp(post_norm_pp_name), norm_eps, hidden_size, true)?;
         Ok(Self {
             self_attn,
             mlp,
@@ -689,14 +690,24 @@ pub fn get_conv1d(
     Ok(conv1d)
 }
 
-pub fn get_layer_norm(vb: VarBuilder, eps: f64, dim: usize) -> Result<LayerNorm> {
+pub fn get_layer_norm(vb: VarBuilder, eps: f64, dim: usize, affine: bool) -> Result<LayerNorm> {
     let ln_config = LayerNormConfig {
         eps,
         remove_mean: true, // true for layernorm, false for RMSNorm
-        affine: true,      // true for with bias, false for without bias
+        affine,            // true for with bias, false for without bias
     };
     let norm = layer_norm(dim, ln_config, vb)?;
     Ok(norm)
+}
+
+pub fn get_layer_norm_without_weight(
+    vb: VarBuilder,
+    eps: f64,
+    dim: usize,
+) -> Result<LayerNorm> {
+    let weight = Tensor::ones(dim, vb.dtype(), vb.device())?;
+    let bias = Tensor::zeros(dim, vb.dtype(), vb.device())?;
+    Ok(LayerNorm::new(weight, bias, eps))
 }
 
 pub fn get_batch_norm(vb: VarBuilder, eps: f64, dim: usize, affine: bool) -> Result<BatchNorm> {
@@ -1166,4 +1177,10 @@ impl WNLinear {
         let x = self.linear.forward(x)?;
         Ok(x)
     }
+}
+
+pub fn mish(xs: &Tensor) -> Result<Tensor> {
+    let tanh = xs.exp()?.affine(1.0, 1.0)?.log()?.tanh()?;
+    let xs = xs.mul(&tanh)?;
+    Ok(xs)
 }

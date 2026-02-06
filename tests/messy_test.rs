@@ -2,22 +2,33 @@
 
 use std::time::Instant;
 
-use aha::utils::{tensor_utils::interpolate_nearest_1d};
-use anyhow::Result;
-use candle_core::{Tensor};
+use aha::utils::tensor_utils::interpolate_nearest_1d;
+use anyhow::{Result, anyhow};
+use candle_core::Tensor;
+use sentencepiece::SentencePieceProcessor;
 // use symphonia::core::io::MediaSourceStream;
 
 #[test]
 fn messy_test() -> Result<()> {
-    // RUST_BACKTRACE=1 cargo test -F cuda,ffmpeg messy_test -r -- --nocapture
+    // RUST_BACKTRACE=1 cargo test -F cuda messy_test -r -- --nocapture
     let device = &candle_core::Device::Cpu;
-    let t = Tensor::arange(0.0f32, 40.0, device)?.broadcast_as((1, 40, 40))?;
-    println!("t: {}", t);
-    let i_start = Instant::now();
-    let t_inter = interpolate_nearest_1d(&t, 20)?;
-    let i_duration = i_start.elapsed();
-    println!("Time elapsed in interpolate_nearest_1d is: {:?}", i_duration);
-    println!("t_inter: {}", t_inter);    
+    let save_dir =
+        aha::utils::get_default_save_dir().ok_or(anyhow::anyhow!("Failed to get save dir"))?;
+    let model_path = format!("{}/IndexTeam/IndexTTS-2", save_dir);
+    let bpe_path = model_path.to_string() + "/bpe.model";
+    let tokenizer = SentencePieceProcessor::open(bpe_path)
+        .map_err(|e| anyhow!(format!("load bpe.model file error:{}", e)))?;
+    let tokens = tokenizer
+        .encode("你好啊")
+        .map_err(|e| anyhow!(format!("tokenizer encode error:{}", e)))?;
+    println!("tokens: {:?}", tokens);
+    // let t = Tensor::arange(0.0f32, 40.0, device)?.broadcast_as((1, 40, 40))?;
+    // println!("t: {}", t);
+    // let i_start = Instant::now();
+    // let t_inter = interpolate_nearest_1d(&t, 20)?;
+    // let i_duration = i_start.elapsed();
+    // println!("Time elapsed in interpolate_nearest_1d is: {:?}", i_duration);
+    // println!("t_inter: {}", t_inter);
     // let url = "https://sis-sample-audio.obs.cn-north-1.myhuaweicloud.com/16k16bit.mp3";
     // let client = reqwest::blocking::Client::new();
     // let response = client.get(url).send()?;

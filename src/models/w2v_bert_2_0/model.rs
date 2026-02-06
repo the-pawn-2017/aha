@@ -7,9 +7,7 @@ use candle_nn::{
 
 use crate::{
     models::{
-        common::{
-            GLU, TwoLinearMLP, eager_attention_forward, get_conv1d, get_layer_norm,
-        },
+        common::{GLU, TwoLinearMLP, eager_attention_forward, get_conv1d, get_layer_norm},
         w2v_bert_2_0::config::W2VBert2_0Config,
     },
     position_embed::rope::{RoPE, apply_rotary_pos_emb},
@@ -27,6 +25,7 @@ impl Wav2Vec2BertFeatureProjection {
             vb.pp("layer_norm"),
             config.layer_norm_eps,
             config.feature_projection_input_dim,
+            true,
         )?;
         let projection = linear(
             config.feature_projection_input_dim,
@@ -248,6 +247,7 @@ impl Wav2Vec2BertConvolutionModule {
             vb.pp("layer_norm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         let pointwise_conv1 = get_conv1d(
             vb.pp("pointwise_conv1"),
@@ -277,6 +277,7 @@ impl Wav2Vec2BertConvolutionModule {
             vb.pp("depthwise_layer_norm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         let pointwise_conv2 = get_conv1d(
             vb.pp("pointwise_conv2"),
@@ -341,6 +342,7 @@ impl Wav2Vec2BertEncoderLayer {
             vb.pp("ffn1_layer_norm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         let ffn1 = TwoLinearMLP::new(
             vb.pp("ffn1"),
@@ -356,6 +358,7 @@ impl Wav2Vec2BertEncoderLayer {
             vb.pp("self_attn_layer_norm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         let self_attn = Wav2Vec2BertSelfAttention::new(vb.pp("self_attn"), config, false)?;
         let conv_module = Wav2Vec2BertConvolutionModule::new(vb.pp("conv_module"), config)?;
@@ -363,6 +366,7 @@ impl Wav2Vec2BertEncoderLayer {
             vb.pp("ffn2_layer_norm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         let ffn2 = TwoLinearMLP::new(
             vb.pp("ffn2"),
@@ -378,6 +382,7 @@ impl Wav2Vec2BertEncoderLayer {
             vb.pp("final_layer_norm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         Ok(Self {
             ffn1_layer_norm,
@@ -488,7 +493,7 @@ impl Wav2Vec2BertEncoder {
         for (i, layer) in (&self.layers).iter().enumerate() {
             if output_hidden_states {
                 hidden_states.push(xs.clone());
-            } 
+            }
             if let Some(id) = layer_id
                 && id == i
             {
@@ -500,7 +505,7 @@ impl Wav2Vec2BertEncoder {
                 sin.as_ref(),
                 attention_mask.as_ref(),
                 conv_attention_mask,
-            )?;                      
+            )?;
         }
         let hidden_states = if hidden_states.len() > 0 {
             Some(hidden_states)

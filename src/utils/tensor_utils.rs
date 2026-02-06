@@ -111,7 +111,7 @@ pub fn split_tensor_with_size<D: Dim>(
     //     "input tensor dim size % splits_size must be equal to 0"
     // );
     for (i, split) in (0..dim_size).step_by(splits_size).enumerate() {
-        let size = splits_size.min(dim_size - i*splits_size);
+        let size = splits_size.min(dim_size - i * splits_size);
         split_res.push(t.narrow(dim, split, size)?);
     }
     Ok(split_res)
@@ -1059,4 +1059,12 @@ pub fn float_range_normalize(t: &Tensor) -> Result<Tensor> {
     }
     t = t.clamp(-1.0, 1.0)?;
     Ok(t)
+}
+
+pub fn sequence_mask(length: &Tensor, max_length: Option<u32>) -> Result<Tensor> {
+    let max_length = max_length.unwrap_or(length.max_all()?.to_scalar::<u32>()?);
+    let x = Tensor::arange(0, max_length, length.device())?.unsqueeze(0)?;
+    let length = length.unsqueeze(1)?;
+    let mask = x.broadcast_lt(&length)?;
+    Ok(mask)
 }

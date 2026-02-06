@@ -90,7 +90,7 @@ impl Qwen3VLVisionPatchMerger {
         } else {
             config.hidden_size
         };
-        let norm = get_layer_norm(vb.pp("norm"), 1e-6, norm_size)?;
+        let norm = get_layer_norm(vb.pp("norm"), 1e-6, norm_size, true)?;
         let linear_fc1 = linear(hidden_size, hidden_size, vb.pp("linear_fc1"))?;
         let act_fn = Activation::Gelu;
         let linear_fc2 = linear(hidden_size, config.out_hidden_size, vb.pp("linear_fc2"))?;
@@ -200,8 +200,8 @@ pub struct Qwen3VLVisionBlock {
 
 impl Qwen3VLVisionBlock {
     pub fn new(config: Qwen3VLVisionConfig, vb: VarBuilder) -> Result<Self> {
-        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-6, config.hidden_size)?;
-        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-6, config.hidden_size)?;
+        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-6, config.hidden_size, true)?;
+        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-6, config.hidden_size, true)?;
         let attn = Qwen3VLVisionAttention::new(config.clone(), vb.pp("attn"))?;
         let mlp = TwoLinearMLP::new(
             vb.pp("mlp"),

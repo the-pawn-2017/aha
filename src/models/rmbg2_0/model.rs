@@ -42,7 +42,7 @@ impl PatchEmbed {
             true,
         )?;
         let norm = if patch_norm {
-            Some(get_layer_norm(vb.pp("norm"), 1e-5, embed_dim)?)
+            Some(get_layer_norm(vb.pp("norm"), 1e-5, embed_dim, true)?)
         } else {
             None
         };
@@ -242,7 +242,7 @@ impl SwinTransformerBlock {
         window_size: usize,
         shift_size: usize,
     ) -> Result<Self> {
-        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-5, dim)?;
+        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-5, dim, true)?;
 
         let attn = WindowAttention::new(
             vb.pp("attn"),
@@ -251,7 +251,7 @@ impl SwinTransformerBlock {
             qkv_bias,
             (window_size, window_size),
         )?;
-        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-5, dim)?;
+        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-5, dim, true)?;
         let mlp_dim = (dim as f32 * mlp_ratio) as usize;
         let mlp = TwoLinearMLP::new(vb.pp("mlp"), dim, mlp_dim, dim, act, true, "fc1", "fc2")?;
         Ok(Self {
@@ -323,7 +323,7 @@ struct PatchMerging {
 impl PatchMerging {
     pub fn new(vb: VarBuilder, dim: usize) -> Result<Self> {
         let reduction = linear_no_bias(4 * dim, 2 * dim, vb.pp("reduction"))?;
-        let norm = get_layer_norm(vb.pp("norm"), 1e-5, 4 * dim)?;
+        let norm = get_layer_norm(vb.pp("norm"), 1e-5, 4 * dim, true)?;
         Ok(Self { reduction, norm })
     }
 
@@ -518,7 +518,7 @@ impl SwinTransformer {
         }
         let mut norms = vec![];
         for i in out_indices.clone() {
-            let layer_i = get_layer_norm(vb.pp(format!("norm{i}")), 1e-5, num_features[i])?;
+            let layer_i = get_layer_norm(vb.pp(format!("norm{i}")), 1e-5, num_features[i], true)?;
             norms.push(layer_i);
         }
         Ok(Self {

@@ -37,6 +37,7 @@ impl Projector {
             vb.pp("pre_norm"),
             config.rms_norm_eps,
             config.vision_config.hidden_size,
+            true,
         )?;
         let linear_1 = linear(hidden_size, hidden_size, vb.pp("linear_1"))?;
         let linear_2 = linear(hidden_size, config.hidden_size, vb.pp("linear_2"))?;
@@ -278,6 +279,7 @@ impl SiglipVisionModel {
             vb.pp("post_layernorm"),
             config.layer_norm_eps,
             config.hidden_size,
+            true,
         )?;
         Ok(Self {
             embeddings,

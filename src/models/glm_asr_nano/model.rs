@@ -129,11 +129,12 @@ impl GlmAsrEncoderLayer {
             "fc2",
         )?;
         let input_layernorm =
-            get_layer_norm(vb.pp("input_layernorm"), 1e-5, audio_cfg.hidden_size)?;
+            get_layer_norm(vb.pp("input_layernorm"), 1e-5, audio_cfg.hidden_size, true)?;
         let post_attention_layernorm = get_layer_norm(
             vb.pp("post_attention_layernorm"),
             1e-5,
             audio_cfg.hidden_size,
+            true,
         )?;
         Ok(Self {
             self_attn,
@@ -202,7 +203,7 @@ impl GlmAsrEncoder {
             let layer_i = GlmAsrEncoderLayer::new(vb_layers.pp(i), audio_cfg)?;
             layers.push(layer_i);
         }
-        let norm = get_layer_norm(vb.pp("norm"), 1e-5, audio_cfg.hidden_size)?;
+        let norm = get_layer_norm(vb.pp("norm"), 1e-5, audio_cfg.hidden_size, true)?;
         let dim = (audio_cfg.head_dim as f64 * audio_cfg.partial_rotary_factor) as usize;
         let rotary_emb = RoPE::new(dim, audio_cfg.rope_parameters.rope_theta, vb.device())?;
         Ok(Self {

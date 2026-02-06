@@ -28,7 +28,7 @@ impl ConvNeXtBlock {
         // layer_scale_init_value: f32,
     ) -> Result<Self> {
         let dwconv = get_conv1d(vb.pp("dwconv"), dim, dim, 7, 3, 1, 1, dim, true)?;
-        let norm = get_layer_norm(vb.pp("norm"), 1e-6, dim)?;
+        let norm = get_layer_norm(vb.pp("norm"), 1e-6, dim, true)?;
         let pwconv1 = linear(dim, intermediate_dim, vb.pp("pwconv1"))?;
         let pwconv2 = linear(intermediate_dim, dim, vb.pp("pwconv2"))?;
         let gamma = vb.get_with_hints(dim, "gamma", Init::Const(1.0))?;
@@ -73,14 +73,14 @@ impl VocosBackbone {
         // layer_scale_init_value: Option<f32>,
     ) -> Result<Self> {
         let embed = get_conv1d(vb.pp("embed"), input_channels, dim, 7, 3, 1, 1, 1, true)?;
-        let norm = get_layer_norm(vb.pp("norm"), 1e-6, dim)?;
+        let norm = get_layer_norm(vb.pp("norm"), 1e-6, dim, true)?;
         let vb_convnext = vb.pp("convnext");
         let mut convnext = vec![];
         for i in 0..num_layers {
             let layer = ConvNeXtBlock::new(vb_convnext.pp(i), dim, intermediate_dim)?;
             convnext.push(layer);
         }
-        let final_layer_norm = get_layer_norm(vb.pp("final_layer_norm"), 1e-6, dim)?;
+        let final_layer_norm = get_layer_norm(vb.pp("final_layer_norm"), 1e-6, dim, true)?;
         Ok(Self {
             embed,
             norm,

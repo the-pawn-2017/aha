@@ -1,5 +1,6 @@
-use anyhow::{Ok, Result, anyhow};
+use anyhow::{Result, anyhow};
 use candle_core::{Device, Tensor};
+use sentencepiece::SentencePieceProcessor;
 use serde_json::Value;
 use tokenizers::{
     AddedToken, Tokenizer, decoders::byte_level::ByteLevel as ByteLevelDecoder, models::bpe::BPE,
@@ -113,4 +114,17 @@ impl TokenizerModel {
             .map_err(|e| anyhow!(format!("tokenizer encode error{}", e)))?;
         Ok(decode)
     }
+}
+
+pub fn sentencepiece_encode(
+    text: &str,
+    tokenizer: &SentencePieceProcessor,
+    device: &Device,
+) -> Result<Tensor> {
+    let tokens = tokenizer
+        .encode(text)
+        .map_err(|e| anyhow!(format!("tokenizer encode error:{}", e)))?;
+    let token_ids = tokens.iter().map(|p| p.id).collect::<Vec<u32>>();
+    let tokens_t = Tensor::new(token_ids, device)?.unsqueeze(0)?;
+    Ok(tokens_t)
 }

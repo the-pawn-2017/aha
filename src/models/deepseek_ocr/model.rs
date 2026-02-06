@@ -252,7 +252,7 @@ impl Block {
         window_size: usize,
         input_size: Option<(usize, usize)>,
     ) -> Result<Self> {
-        let norm1 = get_layer_norm(vb.pp("norm1"), eps, dim)?;
+        let norm1 = get_layer_norm(vb.pp("norm1"), eps, dim, true)?;
         let input_size = if window_size == 0 {
             input_size
         } else {
@@ -266,7 +266,7 @@ impl Block {
             use_rel_pos,
             input_size,
         )?;
-        let norm2 = get_layer_norm(vb.pp("norm2"), eps, dim)?;
+        let norm2 = get_layer_norm(vb.pp("norm2"), eps, dim, true)?;
         let mlp_dim = (dim as f32 * mlp_ratio) as usize;
         let mlp = TwoLinearMLP::new(vb.pp("mlp"), dim, mlp_dim, dim, act, true, "lin1", "lin2")?;
         Ok(Self {
@@ -674,8 +674,8 @@ impl NoTPTransformerBlock {
     ) -> Result<Self> {
         let self_attn = NoTPAttention::new(vb.pp("self_attn"), hidden_size, num_heads)?;
         let mlp = NoTPFeedForward::new(vb.pp("mlp"), hidden_size, ffn_hidden_size)?;
-        let layer_norm1 = get_layer_norm(vb.pp("layer_norm1"), eps, hidden_size)?;
-        let layer_norm2 = get_layer_norm(vb.pp("layer_norm2"), eps, hidden_size)?;
+        let layer_norm1 = get_layer_norm(vb.pp("layer_norm1"), eps, hidden_size, true)?;
+        let layer_norm2 = get_layer_norm(vb.pp("layer_norm2"), eps, hidden_size, true)?;
         Ok(Self {
             self_attn,
             mlp,
@@ -764,7 +764,7 @@ impl VitModel {
             ffn_hidden_size,
             eps,
         )?;
-        let pre_layrnorm = get_layer_norm(vb.pp("pre_layrnorm"), eps, hidden_size)?;
+        let pre_layrnorm = get_layer_norm(vb.pp("pre_layrnorm"), eps, hidden_size, true)?;
         Ok(Self {
             embeddings,
             transformer,

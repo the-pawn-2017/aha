@@ -219,7 +219,7 @@ pub fn crate_tensor_from_reader<R: std::io::Read>(
 pub fn read_pth_tensor_info_cycle<P: AsRef<std::path::Path>>(
     path: P,
     key: Option<&str>,
-) -> Result<Vec<(String, Tensor)>> {
+) -> Result<HashMap<String, Tensor>> {
     let file = std::fs::File::open(path.as_ref())?;
     let zip_reader = std::io::BufReader::new(file);
     let mut zip = zip::ZipArchive::new(zip_reader)?;
@@ -356,7 +356,11 @@ pub fn read_pth_tensor_info_cycle<P: AsRef<std::path::Path>>(
             }
         };
     }
-    Ok(tensors)
+    let mut dict_to_hashmap = HashMap::new();
+    for (k, v) in tensors {
+        dict_to_hashmap.insert(k, v);
+    }
+    Ok(dict_to_hashmap)
 }
 
 pub fn round_by_factor(num: u32, factor: u32) -> u32 {

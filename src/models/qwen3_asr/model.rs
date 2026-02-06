@@ -50,11 +50,12 @@ impl Qwen3ASRAudioEncoderLayer {
             Some("out_proj"),
         )?;
         let self_attn_layer_norm =
-            get_layer_norm(vb.pp("self_attn_layer_norm"), 1e-5, config.d_model)?;
+            get_layer_norm(vb.pp("self_attn_layer_norm"), 1e-5, config.d_model, true)?;
         let activation_fn = config.activation_function;
         let fc1 = linear(config.d_model, config.encoder_ffn_dim, vb.pp("fc1"))?;
         let fc2 = linear(config.encoder_ffn_dim, config.d_model, vb.pp("fc2"))?;
-        let final_layer_norm = get_layer_norm(vb.pp("final_layer_norm"), 1e-5, config.d_model)?;
+        let final_layer_norm =
+            get_layer_norm(vb.pp("final_layer_norm"), 1e-5, config.d_model, true)?;
         Ok(Self {
             self_attn,
             self_attn_layer_norm,
@@ -105,7 +106,7 @@ impl Qwen3ASRAudioEncoder {
             let layer = Qwen3ASRAudioEncoderLayer::new(vb_layers.pp(i), config)?;
             layers.push(layer);
         }
-        let ln_post = get_layer_norm(vb.pp("ln_post"), 1e-5, config.d_model)?;
+        let ln_post = get_layer_norm(vb.pp("ln_post"), 1e-5, config.d_model, true)?;
         let conv2d1 = get_conv2d(
             vb.pp("conv2d1"),
             1,

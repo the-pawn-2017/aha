@@ -227,8 +227,8 @@ impl EncoderLayerSANM {
             "w_1",
             "w_2",
         )?;
-        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-5, in_dim)?;
-        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-5, hidden_dim)?;
+        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-5, in_dim, true)?;
+        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-5, hidden_dim, true)?;
         let concat_linear = if concat_after {
             let lin = linear(hidden_dim * 2, hidden_dim, vb.pp("concat_linear"))?;
             Some(lin)
@@ -400,8 +400,8 @@ impl SenseVoiceEncoderSmall {
             )?;
             tp_encoders.push(tp_blocks_i);
         }
-        let after_norm = get_layer_norm(vb.pp("after_norm"), 1e-5, output_size)?;
-        let tp_norm = get_layer_norm(vb.pp("tp_norm"), 1e-5, output_size)?;
+        let after_norm = get_layer_norm(vb.pp("after_norm"), 1e-5, output_size, true)?;
+        let tp_norm = get_layer_norm(vb.pp("tp_norm"), 1e-5, output_size, true)?;
         let scaling = (output_size as f64).powf(0.5);
         Ok(Self {
             embed,
@@ -468,8 +468,8 @@ impl AdaptorEncoderLayer {
             "w_1",
             "w_2",
         )?;
-        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-5, llm_dim)?;
-        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-5, llm_dim)?;
+        let norm1 = get_layer_norm(vb.pp("norm1"), 1e-5, llm_dim, true)?;
+        let norm2 = get_layer_norm(vb.pp("norm2"), 1e-5, llm_dim, true)?;
         let concat_linear = if concat_after {
             let lin = linear(llm_dim * 2, llm_dim, vb.pp("concat_linear"))?;
             Some(lin)

@@ -1,20 +1,33 @@
-use anyhow::Result;
-use candle_core::{D, Tensor};
+use anyhow::{Result, anyhow};
+use candle_core::{D, DType, Device, IndexOp, Tensor, pickle::read_all_with_key};
 use candle_nn::{
-    Conv1d, Embedding, LayerNorm, Linear, Module, RmsNorm, VarBuilder, embedding, linear, linear_b,
-    ops::sigmoid, rms_norm,
+    Activation, Conv1d, Embedding, GroupNorm, Init, LayerNorm, Linear, Module, RmsNorm, VarBuilder,
+    embedding, group_norm, linear, linear_b, ops::sigmoid, rms_norm,
 };
 
 use crate::{
     models::{
+        campplus::CAMPPlus,
         common::{
             GateUpDownMLP, QKVCatAttention, TwoLinearMLP, WNConv1d, WNLinear, get_conv1d,
-            get_layer_norm,
+            get_layer_norm, get_layer_norm_without_weight, mish,
         },
-        index_tts2::config::{DiTModelArgs, S2MelConfig},
+        feature_extractor::seamless_m4t_feature_extractor::SeamlessM4TFeatureExtractor,
+        index_tts2::config::{DiTModelArgs, IndexTTS2Config, PreprocessParams, S2MelConfig},
+        mask_gct::model::RepCodec,
+        w2v_bert_2_0::model::W2VBert2_0Model,
     },
     position_embed::rope::RoPE,
-    utils::tensor_utils::{pad_reflect_last_dim, split_tensor_with_size},
+    utils::{
+        audio_utils::{
+            create_hann_window, get_waveform_and_window_properties, kaldi_fbank,
+            kaldi_get_mel_banks, mel_filter_bank, torch_stft,
+        },
+        get_vb_model_path, read_pth_tensor_info_cycle,
+        tensor_utils::{
+            interpolate_nearest_1d, pad_reflect_last_dim, sequence_mask, split_tensor_with_size,
+        },
+    },
 };
 pub struct AdaptiveLayerNorm {
     project_layer: Linear,
@@ -219,7 +232,7 @@ impl TimestepEmbedder {
             candle_nn::Activation::Silu,
             true,
             "0",
-            "1",
+            "2",
         )?;
         let scale = 1000.0;
         let half = frequency_embedding_size / 2;
@@ -338,7 +351,7 @@ impl Wavenet {
             let in_layer = SConv1d::new(
                 vb_layers.pp(i),
                 hidden_c,
-                1 * hidden_c,
+                2 * hidden_c,
                 ks,
                 1,
                 dilation,
@@ -385,7 +398,7 @@ impl Wavenet {
         Ok(acts)
     }
 
-    pub fn forward(self, xs: &Tensor, x_mask: &Tensor, g: Option<&Tensor>) -> Result<Tensor> {
+    pub fn forward(&self, xs: &Tensor, x_mask: &Tensor, g: Option<&Tensor>) -> Result<Tensor> {
         let mut output = xs.zeros_like()?;
         let g = if let Some(g) = g
             && let Some(cond_layer) = &self.cond_layer
@@ -432,7 +445,7 @@ impl FinalLayer {
         patch_size: usize,
         out_c: usize,
     ) -> Result<Self> {
-        let norm_final = get_layer_norm(vb.pp("norm_final"), 1e-6, hidden_size)?;
+        let norm_final = get_layer_norm_without_weight(vb.pp("norm_final"), 1e-6, hidden_size)?;
         let linear = WNLinear::new(
             vb.pp("linear"),
             hidden_size,
@@ -485,6 +498,8 @@ pub struct DiT {
     time_as_token: bool,
     style_as_token: bool,
     uvit_skip_connection: bool,
+    transformer_style_condition: bool,
+    long_skip_connection: bool,
 }
 
 impl DiT {
@@ -594,24 +609,451 @@ impl DiT {
             time_as_token,
             style_as_token,
             uvit_skip_connection,
+            transformer_style_condition: config.di_t.style_condition,
+            long_skip_connection: config.di_t.long_skip_connection,
         })
+    }
+
+    pub fn forward(
+        &self,
+        xs: &Tensor,
+        prompt_xs: &Tensor,
+        x_lens: &Tensor,
+        t: &Tensor,
+        style: Option<&Tensor>,
+        cond: &Tensor,
+    ) -> Result<Tensor> {
+        let (_, _, t_dim) = xs.dims3()?;
+        let t1 = self.t_embedder.forward(t)?;
+        let cond = self.cond_projection.forward(cond)?;
+        let xs = xs.transpose(1, 2)?;
+        let prompt_xs = prompt_xs.transpose(1, 2)?;
+        let mut x_in = Tensor::cat(&[&xs, &prompt_xs, &cond], D::Minus1)?;
+        if self.transformer_style_condition
+            && !self.style_as_token
+            && let Some(style) = style
+        {
+            let style = style.unsqueeze(1)?.repeat((1, t_dim, 1))?;
+            x_in = Tensor::cat(&[&x_in, &style], D::Minus1)?;
+        }
+        x_in = self.cond_x_merge_linear.forward(&x_in)?;
+        // if self.style_as_token
+        //     && let Some(style_in) = self.style_in.as_ref()
+        // {
+        //     let style = style_in.forward(style)?.unsqueeze(1)?;
+        //     x_in = Tensor::cat(&[&style, &x_in], 1)?;
+        // }
+        // if self.time_as_token {
+        //     let t1 = t1.unsqueeze(1)?;
+        //     x_in = Tensor::cat(&[&t1, &x_in], 1)?;
+        // }
+        // let mut x_lens = x_lens.clone();
+        // if self.style_as_token {
+        //     x_lens = x_lens.affine(1.0, 1.0)?;
+        // }
+        // if self.time_as_token {
+        //     x_lens = x_lens.affine(1.0, 0.0)?;
+        // }
+        let x_mask = sequence_mask(&x_lens, Some(x_in.dim(1)? as u32))?
+            .to_device(xs.device())?
+            .unsqueeze(1)?;
+        let mut x_res = self.transformer.forward(&x_in, &t1.unsqueeze(1)?, None)?;
+        // if self.time_as_token {
+        //     let last_dim = x_res.dim(D::Minus1)?;
+        //     x_res = x_res.narrow(D::Minus1, 1, last_dim - 1)?;
+        // }
+        // if self.style_as_token {
+        //     let last_dim = x_res.dim(D::Minus1)?;
+        //     x_res = x_res.narrow(D::Minus1, 1, last_dim - 1)?;
+        // }
+        if self.long_skip_connection {
+            x_res = self
+                .skip_linear
+                .forward(&Tensor::cat(&[&x_res, &xs], D::Minus1)?)?;
+        }
+        let xs = self.conv1.forward(&x_res)?;
+        let xs = xs.transpose(1, 2)?;
+        let t2 = self.t_embedder2.forward(t)?;
+        let xs = self
+            .wavenet
+            .forward(&xs, &x_mask, Some(&t2.unsqueeze(2)?))?
+            .transpose(1, 2)?
+            .broadcast_add(&self.res_projection.forward(&x_res)?)?;
+        let xs = self.final_layer.forward(&xs, &t1)?.transpose(1, 2)?;
+        let xs = self.conv2.forward(&xs)?;
+        Ok(xs)
     }
 }
 
 pub struct CFM {
+    in_channels: usize,
     estimator: DiT,
+    // criterion: l1Loss
+    sigma_min: f32,
+}
+
+impl CFM {
+    pub fn new(vb: VarBuilder, config: &S2MelConfig) -> Result<Self> {
+        let in_channels = config.di_t.in_channels;
+        let sigma_min = 1e-6;
+        let estimator = DiT::new(vb.pp("estimator"), config)?;
+        Ok(Self {
+            in_channels,
+            estimator,
+            sigma_min,
+        })
+    }
+}
+
+pub struct InterpolateModule {
+    conv1d: Conv1d,
+    norm: GroupNorm,
+}
+
+impl InterpolateModule {
+    pub fn new(vb: &VarBuilder, index: usize, channels: usize, groups: usize) -> Result<Self> {
+        let start_index = index * 3;
+        let conv1d = get_conv1d(vb.pp(start_index), channels, channels, 3, 1, 1, 1, 1, true)?;
+        let norm = group_norm(groups, channels, 1e-5, vb.pp(start_index + 1))?;
+        Ok(Self { conv1d, norm })
+    }
+
+    pub fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        let xs = self.conv1d.forward(xs)?;
+        let xs = self.norm.forward(&xs)?;
+        let xs = mish(&xs)?;
+        Ok(xs)
+    }
+}
+
+pub struct InterpolateRegulator {
+    sampling_ratios: Vec<usize>,
+    out_channels: usize,
+    model0_11: Vec<InterpolateModule>,
+    model_12: Conv1d,
+    embedding: Embedding,
+    mask_token: Tensor,
+    quantizer_dropout: f32,
+    content_in_proj: Linear,
+    n_codebooks: usize,
+    interpolate: bool,
+}
+
+impl InterpolateRegulator {
+    pub fn new(
+        vb: VarBuilder,
+        channels: usize,
+        sampling_ratios: Vec<usize>,
+        is_discrete: bool,
+        in_channels: usize,
+        vector_quantize: bool,
+        codebook_size: usize,
+        out_channels: Option<usize>,
+        groups: usize,
+        n_codebooks: usize,
+        quantizer_dropout: f32,
+        f0_condition: bool,
+        n_f0_bins: usize,
+    ) -> Result<Self> {
+        let out_channels = out_channels.unwrap_or(channels);
+        let vb_model = vb.pp("model");
+        let interpolate = true;
+        let mut model0_11 = vec![];
+        for (index, _) in sampling_ratios.iter().enumerate() {
+            let inter = InterpolateModule::new(&vb_model, index, channels, groups)?;
+            model0_11.push(inter);
+        }
+        let model_12 = get_conv1d(
+            vb_model.pp("12"),
+            channels,
+            out_channels,
+            1,
+            0,
+            1,
+            1,
+            1,
+            true,
+        )?;
+        let embedding = embedding(codebook_size, channels, vb.pp("embedding"))?;
+        let mask_token = vb.get_with_hints((1, channels), "mask_token", Init::Const(0.0))?;
+        let content_in_proj = linear(in_channels, channels, vb.pp("content_in_proj"))?;
+        Ok(Self {
+            sampling_ratios,
+            out_channels,
+            model0_11,
+            model_12,
+            embedding,
+            mask_token,
+            quantizer_dropout,
+            content_in_proj,
+            n_codebooks,
+            interpolate,
+        })
+    }
+    pub fn forward(&self, x: &Tensor, y_lens: &Tensor) -> Result<Tensor> {
+        let mut xs = self.content_in_proj.forward(x)?;
+        xs = xs.transpose(1, 2)?.contiguous()?;
+        if self.interpolate {
+            let size = y_lens.max_all()?.to_scalar::<u32>()? as usize;
+            xs = interpolate_nearest_1d(&xs, size)?;
+        }
+        for model_i in self.model0_11.iter() {
+            xs = model_i.forward(&xs)?;
+        }
+        xs = self.model_12.forward(&xs)?.transpose(1, 2)?.contiguous()?;
+        Ok(xs)
+    }
 }
 
 pub struct MyModel {
     cfm: CFM,
+    length_regulator: InterpolateRegulator,
 }
 
-pub struct IndexTTS2 {
-    cache_spk_cond: Option<Tensor>,
-    cache_s2mel_style: Option<Tensor>,
-    cache_s2mel_prompt: Option<Tensor>,
-    cache_spk_audio_prompt: Option<String>,
-    cache_emo_cond: Option<Tensor>,
-    cache_emo_audio_prompt: Option<Tensor>,
-    cache_mel: Option<Tensor>,
+impl MyModel {
+    pub fn new(
+        model_path: &str,
+        config: &S2MelConfig,
+        dtype: DType,
+        device: &Device,
+    ) -> Result<Self> {
+        let s2mel_path = model_path.to_string() + "/s2mel.pth";
+        let length_regulator_dict =
+            read_pth_tensor_info_cycle(s2mel_path.clone(), Some("net.length_regulator"))?;
+        let length_regulator_vb = VarBuilder::from_tensors(length_regulator_dict, dtype, device);
+        let length_regulator = InterpolateRegulator::new(
+            length_regulator_vb,
+            config.length_regulator.channels,
+            config.length_regulator.sampling_ratios.clone(),
+            config.length_regulator.is_discrete,
+            config.length_regulator.in_channels,
+            config.length_regulator.vector_quantize,
+            config.length_regulator.content_codebook_size,
+            None,
+            1,
+            config.length_regulator.n_codebooks,
+            config.length_regulator.quantizer_dropout,
+            config.length_regulator.f0_condition,
+            config.length_regulator.n_f0_bins,
+        )?;
+        let cfm_dict = read_pth_tensor_info_cycle(s2mel_path.clone(), Some("net.cfm"))?;
+        let cfm_vb = VarBuilder::from_tensors(cfm_dict, dtype, device);
+        let cfm = CFM::new(cfm_vb, config)?;
+        Ok(Self {
+            cfm,
+            length_regulator,
+        })
+    }
+
+    pub fn length_regulator_forward(
+        &self,
+        s_ori: &Tensor,
+        target_lengths: &Tensor,
+    ) -> Result<Tensor> {
+        let xs = self.length_regulator.forward(s_ori, target_lengths)?;
+        Ok(xs)
+    }
+}
+
+pub struct IndexTTS2Cache {
+    pub cache_spk_cond: Tensor,
+    pub cache_s2mel_style: Tensor,
+    pub cache_s2mel_prompt: Tensor,
+    pub cache_mel: Tensor,
+    // pub cache_emo_cond: Tensor,
+    // pub cache_emo_audio_prompt: Tensor,
+}
+
+pub struct IndexTTS2Model {
+    cache: Option<IndexTTS2Cache>,
+    feature_extractor: SeamlessM4TFeatureExtractor,
+    semantic_model: W2VBert2_0Model,
+    semantic_mean: Tensor,
+    semantic_std: Tensor,
+    semantic_codec: RepCodec,
+    s2mel_filters: Tensor,
+    s2mel_windows: Tensor,
+    s2mel_preprocess_params: PreprocessParams,
+    window_shift: usize,
+    window_size: usize,
+    padded_window_size: usize,
+    mel_energies: Tensor,
+    campplus_model: CAMPPlus,
+    s2mel: MyModel,
+}
+
+impl IndexTTS2Model {
+    pub fn new(
+        path: &str,
+        save_dir: &str,
+        config: &IndexTTS2Config,
+        device: &Device,
+        dtype: DType,
+    ) -> Result<Self> {
+        let feature_extractor = SeamlessM4TFeatureExtractor::new(
+            // 80,
+            80,
+            crate::utils::tensor_utils::PaddingSide::Right,
+            1.0,
+            16000,
+            2,
+            device,
+        )?;
+        let w2vbert2_path = save_dir.to_string() + "/facebook/w2v-bert-2.0";
+        let semantic_model = W2VBert2_0Model::init(&w2vbert2_path, device, dtype)?;
+        let semantic_mean_var_path = path.to_string() + "/" + &config.w2v_stat;
+        let dict = read_all_with_key(semantic_mean_var_path, None)?;
+        let mut semantic_mean = Tensor::new(0.0, device)?.to_dtype(dtype)?;
+        let mut semantic_std = Tensor::new(1.0, device)?.to_dtype(dtype)?;
+        for (k, v) in dict {
+            if k.eq("mean") {
+                semantic_mean = v.to_device(device)?.to_dtype(dtype)?;
+            } else if k.eq("var") {
+                semantic_std = v.to_device(device)?.to_dtype(dtype)?.sqrt()?;
+            }
+        }
+
+        let semantic_codec_path =
+            save_dir.to_string() + "/amphion/MaskGCT/semantic_codec/model.safetensors";
+        let vb =
+            unsafe { VarBuilder::from_mmaped_safetensors(&[semantic_codec_path], dtype, &device)? };
+        let semantic_codec = RepCodec::new(vb, &config.semantic_codec)?;
+        let s2mel_filters = mel_filter_bank(
+            config.s2mel.preprocess_params.spect_params.n_fft / 2 + 1,
+            config.s2mel.preprocess_params.spect_params.n_mels,
+            config.s2mel.preprocess_params.spect_params.fmin as f32,
+            config
+                .s2mel
+                .preprocess_params
+                .spect_params
+                .fmax
+                .unwrap_or(config.s2mel.preprocess_params.sr / 2) as f32,
+            config.s2mel.preprocess_params.sr as f32,
+            Some("slaney"),
+            crate::utils::audio_utils::MelScale::Slaney,
+            false,
+            device,
+        )?
+        .t()?;
+        let s2mel_windows = create_hann_window(
+            config.s2mel.preprocess_params.spect_params.win_length,
+            dtype,
+            device,
+        )?;
+        let (window_shift, window_size, padded_window_size) =
+            get_waveform_and_window_properties(16000, 10.0, 25.0, true)?;
+        let (mel_energies, _) =
+            kaldi_get_mel_banks(80, padded_window_size, 16000 as f32, 20.0, 0.0, device)?;
+        let mel_energies = mel_energies.pad_with_zeros(D::Minus1, 0, 1)?.t()?;
+        let campplus_model_path = save_dir.to_string()
+            + "/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin";
+        let campplus_vb = get_vb_model_path(campplus_model_path, dtype, device.clone(), None)?;
+        let campplus_model = CAMPPlus::new(campplus_vb, 80, 192, 32, 4, 128)?;
+        let s2mel = MyModel::new(path, &config.s2mel, dtype, device)?;
+        Ok(Self {
+            cache: None,
+            feature_extractor,
+            semantic_model,
+            semantic_mean,
+            semantic_std,
+            semantic_codec,
+            s2mel_filters,
+            s2mel_windows,
+            s2mel_preprocess_params: config.s2mel.preprocess_params.clone(),
+            window_shift,
+            window_size,
+            padded_window_size,
+            mel_energies,
+            campplus_model,
+            s2mel,
+        })
+    }
+
+    pub fn get_emb(
+        &self,
+        input_features: &Tensor,
+        attention_mask: Option<&Tensor>,
+    ) -> Result<Tensor> {
+        let output =
+            self.semantic_model
+                .forward(input_features, attention_mask, Some(17), false)?;
+        let feature = &output.specify_layer_id_hidden_state.unwrap();
+        let feature = feature
+            .broadcast_sub(&self.semantic_mean)?
+            .broadcast_div(&self.semantic_std)?;
+        Ok(feature)
+    }
+
+    pub fn s2mel_spectrogram(&self, waveform: &Tensor) -> Result<Tensor> {
+        let pad = (self.s2mel_preprocess_params.spect_params.n_fft
+            - self.s2mel_preprocess_params.spect_params.hop_length)
+            / 2;
+        let pad_audio_22k = pad_reflect_last_dim(&waveform, (pad, pad))?;
+        let spec = torch_stft(
+            &pad_audio_22k,
+            self.s2mel_preprocess_params.spect_params.n_fft,
+            self.s2mel_preprocess_params.spect_params.hop_length,
+            &self.s2mel_windows,
+        )?
+        .transpose(1, 2)?;
+        let spec = self.s2mel_filters.broadcast_matmul(&spec)?;
+        let spec = spec.clamp(1e-5, f64::INFINITY)?.log()?;
+        Ok(spec)
+    }
+
+    pub fn forward(
+        &mut self,
+        input_ids: &Tensor,
+        audio_22k: Option<&Tensor>,
+        audio_16k: Option<&Tensor>,
+    ) -> Result<()> {
+        if (audio_22k.is_none() || audio_16k.is_none()) && self.cache.is_none() {
+            return Err(anyhow!(
+                "Missing required audio input: must provide either audio_22k, audio_16k, or have cached prompt data available"
+            ));
+        }
+        let (spk_cond_emb, style, prompt_condition, ref_mel) = if let Some(audio_22k) = audio_22k
+            && let Some(audio_16k) = audio_16k
+        {
+            let (audio_16k_features, audio_16k_mask) =
+                self.feature_extractor.call(&audio_16k, 16000, true, true)?;
+            let spk_cond_emb = self.get_emb(&audio_16k_features, audio_16k_mask.as_ref())?;
+            let (_, s_ref) = self.semantic_codec.quantize(&spk_cond_emb)?;
+            let ref_mel = self.s2mel_spectrogram(&audio_22k)?;
+            let ref_target_lengths = Tensor::new(ref_mel.dim(2)? as u32, ref_mel.device())?;
+            let feat = kaldi_fbank(
+                &audio_16k,
+                &self.mel_energies,
+                self.window_shift,
+                self.window_size,
+                self.padded_window_size,
+                0.0,
+            )?;
+            let feat = feat.broadcast_sub(&feat.mean_keepdim(1)?)?;
+            let style = self.campplus_model.forward(&feat)?;
+            let prompt_condition = self
+                .s2mel
+                .length_regulator
+                .forward(&s_ref, &ref_target_lengths)?;
+            let cache = IndexTTS2Cache {
+                cache_spk_cond: spk_cond_emb.clone(),
+                cache_s2mel_style: style.clone(),
+                cache_s2mel_prompt: prompt_condition.clone(),
+                cache_mel: ref_mel.clone(),
+            };
+            self.cache = Some(cache);
+            (spk_cond_emb, style, prompt_condition, ref_mel)
+        } else {
+            let cache = self.cache.as_ref().unwrap();
+            (
+                cache.cache_spk_cond.clone(),
+                cache.cache_s2mel_style.clone(),
+                cache.cache_s2mel_prompt.clone(),
+                cache.cache_mel.clone(),
+            )
+        };
+        
+        
+        Ok(())
+    }
 }
