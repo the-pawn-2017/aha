@@ -1,11 +1,11 @@
-# AHA 命令行使用说明
+# CLI 参考
 
-## 概述
+aha 的完整命令行界面参考。
 
 AHA 是一个基于 Candle 框架的高性能模型推理库，支持多种多模态模型，包括视觉、语言和语音模型。
 
 ```bash
-aha [COMMAND] [OPTIONS] 
+aha [COMMAND] [OPTIONS]
 ```
 
 ## 全局选项
@@ -105,7 +105,7 @@ aha run -m fun-asr-nano-2512 -i "语音转写：" -i "audio.wav" --weight-path /
 aha run -m qwen3-0.6b -i "你好" --weight-path /path/to/model
 
 # qwen2.5vl 图像理解（两个输入：提示文本 + 图片文件）
-aha run -m qwen2.5vl-3b -i "请分析图片并提取所有可见文本内容，按从左到右、从上到下的布局，返回纯文本" -i "image.jpg"  --weight-path /path/to/model
+aha run -m qwen2.5vl-3b -i "请分析图片并提取所有可见文本内容，按从左到右、从上到下的布局，返回纯文本" -i "image.jpg" --weight-path /path/to/model
 
 # Qwen3-ASR 语音识别（单个输入：音频文件）
 aha run -m qwen3asr-0.6b -i "audio.wav" --weight-path /path/to/model
@@ -272,7 +272,7 @@ aha -m qwen3vl-2b
 
 2. **下载重试机制**：默认重试 3 次，每次失败后等待 2 秒再重试。可通过 `--download-retries` 调整重试次数。
 
-3. **默认保存目录**：模型默认保存到 `~/.aha/` 目录下，可通过 `--save-dir` 或 `-d` 参数自定义。
+3. **默认保存目录**：模型默认保存到 `~/.aha/` 目录下，可通过 `--save-dir` 或 `-s` 参数自定义。
 
 4. **端口占用**：启动服务前确保指定的端口未被占用，默认端口为 10100。
 
@@ -292,3 +292,9 @@ aha download --help
 # 查看版本信息
 aha --version
 ```
+
+## 另见
+
+- [快速入门](./getting-started.zh-CN.md) - 快速入门指南
+- [API 文档](./api.zh-CN.md) - REST API 参考
+- [支持的模型](./supported-tools.zh-CN.md) - 可用模型
