@@ -48,7 +48,7 @@ pub enum WhichModel {
     Qwen3ASR0_6B,
     #[value(name = "qwen3asr-1.7b", hide = true)]
     Qwen3ASR1_7B,
-    #[value(name = "qwen3vl-4b", hide = true)]
+    #[value(name = "qwen3vl-2b", hide = true)]
     Qwen3vl2B,
     #[value(name = "qwen3vl-4b", hide = true)]
     Qwen3vl4B,
