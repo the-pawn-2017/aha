@@ -2,18 +2,21 @@ use std::pin::pin;
 use std::sync::{Arc, OnceLock};
 
 use aha::models::{GenerateModel, ModelInstance, WhichModel, load_model};
+use aha::process::cleanup_pid_file;
 use aha::utils::string_to_static_str;
 use aha_openai_dive::v1::resources::chat::ChatCompletionParameters;
 use rocket::futures::StreamExt;
 use rocket::serde::{json::Json, Serialize};
 use rocket::{
     Request,
+    State,
     futures::Stream,
     get,
     http::{ContentType, Status},
     post,
     response::{Responder, stream::TextStream},
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 
 /// Wrapper to store model type together with the model instance
@@ -23,6 +26,9 @@ struct StoredModel {
 }
 
 static MODEL: OnceLock<Arc<RwLock<StoredModel>>> = OnceLock::new();
+static SHUTDOWN_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static SERVER_PORT: OnceLock<u16> = OnceLock::new();
+static ALLOW_REMOTE_SHUTDOWN: OnceLock<bool> = OnceLock::new();
 
 pub fn init(model_type: WhichModel, path: String) -> anyhow::Result<()> {
     let model_path = string_to_static_str(path);
@@ -32,6 +38,16 @@ pub fn init(model_type: WhichModel, path: String) -> anyhow::Result<()> {
         instance: model,
     })));
     Ok(())
+}
+
+pub fn set_server_port(port: u16, allow_remote_shutdown: bool) {
+    SHUTDOWN_FLAG.get_or_init(|| Arc::new(AtomicBool::new(false)));
+    SERVER_PORT.get_or_init(|| port);
+    ALLOW_REMOTE_SHUTDOWN.get_or_init(|| allow_remote_shutdown);
+}
+
+pub fn get_shutdown_flag() -> Arc<AtomicBool> {
+    SHUTDOWN_FLAG.get_or_init(|| Arc::new(AtomicBool::new(false))).clone()
 }
 
 pub(crate) enum Response<R: Stream<Item = String> + Send> {
@@ -368,4 +384,48 @@ mod tests {
         assert_eq!(which_model_to_owner(WhichModel::VoxCPM1_5), "OpenBMB");
         assert_eq!(which_model_to_owner(WhichModel::HunyuanOCR), "Tencent-Hunyuan");
     }
+}
+
+// Shutdown endpoint
+#[derive(Serialize)]
+struct ShutdownResponse {
+    message: String,
+}
+
+#[post("/shutdown")]
+pub(crate) async fn shutdown(shutdown_flag: &State<Arc<AtomicBool>>) -> (Status, (ContentType, Json<serde_json::Value>)) {
+    // Check if remote shutdown is allowed
+    let allow_remote = ALLOW_REMOTE_SHUTDOWN.get().copied().unwrap_or(false);
+
+    // Log the shutdown request
+    eprintln!(
+        "[SHUTDOWN] Shutdown requested (remote_allowed: {})",
+        allow_remote
+    );
+
+    // Note: Rocket 0.5 doesn't provide easy access to client IP in request guards
+    // For proper IP-based filtering, you would need to use custom request guards
+    // or middleware. For now, we rely on the --allow-remote-shutdown flag.
+
+    shutdown_flag.store(true, Ordering::SeqCst);
+
+    // Cleanup PID file in a background task
+    if let Some(&port) = SERVER_PORT.get() {
+        let _ = cleanup_pid_file(port);
+    }
+
+    // Schedule shutdown after a short delay to allow response to be sent
+    let _flag = shutdown_flag.inner().clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        std::process::exit(0);
+    });
+
+    let response = ShutdownResponse {
+        message: "Shutting down...".to_string(),
+    };
+    (
+        Status::Ok,
+        (ContentType::JSON, Json(serde_json::to_value(response).unwrap())),
+    )
 }

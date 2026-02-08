@@ -1,7 +1,8 @@
-use std::{net::IpAddr, str::FromStr};
+use std::{net::IpAddr, str::FromStr, sync::Arc};
 
 use aha::{
     models::WhichModel,
+    process::{create_pid_file, cleanup_pid_file},
     utils::{download_model, get_default_save_dir},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -10,8 +11,9 @@ use rocket::{
     data::{ByteUnit, Limits},
     routes,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::api::init;
+use crate::api::{init, set_server_port};
 mod api;
 
 #[derive(Parser, Debug)]
@@ -52,6 +54,8 @@ enum Commands {
     Cli(CliArgs),
     /// Start service only (--weight-path is optional, defaults to ~/.aha/{model_id})
     Serv(ServArgs),
+    /// List all running aha services
+    Ps(ServListArgs),
     /// Download model only
     Download(DownloadArgs),
     /// Run model inference directly
@@ -74,6 +78,10 @@ struct CommonArgs {
     /// Model type (required)
     #[arg(short, long)]
     model: WhichModel,
+
+    /// Allow remote shutdown requests (default: local only, use with caution)
+    #[arg(long)]
+    allow_remote_shutdown: bool,
 }
 
 /// Arguments for the 'cli' subcommand (download + serve)
@@ -95,7 +103,7 @@ struct CliArgs {
     download_retries: Option<u32>,
 }
 
-/// Arguments for the 'serv' subcommand (serve only)
+/// Arguments for the 'serv start' subcommand
 #[derive(Args, Debug)]
 struct ServArgs {
     #[command(flatten)]
@@ -104,6 +112,14 @@ struct ServArgs {
     /// Local model weight path (defaults to ~/.aha/{model_id} if not specified)
     #[arg(long)]
     weight_path: Option<String>,
+}
+
+/// Arguments for the 'serv list' subcommand
+#[derive(Args, Debug)]
+struct ServListArgs {
+    /// Compact output format
+    #[arg(short, long)]
+    compact: bool,
 }
 
 /// Arguments for the 'download' subcommand (download only)
@@ -211,7 +227,7 @@ async fn run_cli(args: CliArgs) -> anyhow::Result<()> {
     };
 
     init(common.model, model_path)?;
-    start_http_server(common.address, common.port).await?;
+    start_http_server(common.address, common.port, common.allow_remote_shutdown).await?;
 
     Ok(())
 }
@@ -229,7 +245,50 @@ async fn run_serv(args: ServArgs) -> anyhow::Result<()> {
     };
 
     init(common.model, model_path)?;
-    start_http_server(common.address, common.port).await?;
+    start_http_server(common.address, common.port, common.allow_remote_shutdown).await?;
+
+    Ok(())
+}
+
+/// Run the 'ps' subcommand: list running AHA services
+fn run_ps(args: ServListArgs) -> anyhow::Result<()> {
+    use aha::process::find_aha_services;
+
+    let services = find_aha_services()?;
+
+    if services.is_empty() {
+        println!("No aha services found running.");
+        return Ok(());
+    }
+
+    if args.compact {
+        // Compact format: one service per line
+        for svc in services {
+            println!("{}", svc.service_id);
+        }
+    } else {
+        // Table format
+        println!("{:<20} {:<10} {:<20} {:<10} {:<15} {:<10}",
+            "Service ID", "PID", "Model", "Port", "Address", "Status");
+        println!("{}", "-".repeat(85));
+
+        for svc in services {
+            let model = svc.model.as_deref().unwrap_or("N/A");
+            let status = match svc.status {
+                aha::process::ServiceStatus::Running => "Running",
+                aha::process::ServiceStatus::Stopping => "Stopping",
+                aha::process::ServiceStatus::Unknown => "Unknown",
+            };
+            println!("{:<20} {:<10} {:<20} {:<10} {:<15} {:<10}",
+                svc.service_id,
+                svc.pid,
+                model,
+                svc.port,
+                svc.address,
+                status,
+            );
+        }
+    }
 
     Ok(())
 }
@@ -356,6 +415,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Some(Commands::Cli(args)) => run_cli(args).await,
         Some(Commands::Serv(args)) => run_serv(args).await,
+        Some(Commands::Ps(args)) => run_ps(args),
         Some(Commands::Download(args)) => run_download(args).await,
         Some(Commands::Run(args)) => run_run(args),
         Some(Commands::List) => run_list(),
@@ -367,6 +427,7 @@ async fn main() -> anyhow::Result<()> {
                     address: cli.address.unwrap_or_else(|| "127.0.0.1".to_string()),
                     port: cli.port.unwrap_or(10100),
                     model,
+                    allow_remote_shutdown: false,
                 },
                 weight_path: cli.weight_path,
                 save_dir: cli.save_dir,
@@ -377,7 +438,31 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-pub(crate) async fn start_http_server(address: String, port: u16) -> anyhow::Result<()> {
+pub(crate) async fn start_http_server(address: String, port: u16, allow_remote_shutdown: bool) -> anyhow::Result<()> {
+    // Set server port for shutdown endpoint
+    set_server_port(port, allow_remote_shutdown);
+
+    // Create PID file for service tracking
+    let pid = std::process::id();
+    create_pid_file(pid, port)?;
+
+    // Set up shutdown flag
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let shutdown_flag_clone = shutdown_flag.clone();
+
+    // Configure Ctrl+C handler for graceful shutdown
+    let port_for_cleanup = port;
+    let shutdown_handler = tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        println!("Received shutdown signal, gracefully shutting down...");
+        shutdown_flag_clone.store(true, Ordering::SeqCst);
+        // Give time for existing requests to complete
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        // Cleanup PID file
+        let _ = cleanup_pid_file(port_for_cleanup);
+        std::process::exit(0);
+    });
+
     let mut builder = rocket::build().configure(Config {
         address: IpAddr::from_str(&address)?,
         port,
@@ -396,7 +481,15 @@ pub(crate) async fn start_http_server(address: String, port: u16) -> anyhow::Res
     builder = builder.mount("/audio", routes![api::speech]);
     // Health check and model info endpoints
     builder = builder.mount("/", routes![api::health, api::models]);
+    // Shutdown endpoint
+    builder = builder.manage(shutdown_flag);
+    builder = builder.mount("/", routes![api::shutdown]);
 
-    builder.launch().await?;
+    let _rocket = builder.launch().await?;
+
+    // Cleanup PID file when server exits
+    cleanup_pid_file(port)?;
+    shutdown_handler.abort();
+
     Ok(())
 }

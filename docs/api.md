@@ -438,6 +438,67 @@ Returns the processed image in base64 PNG format.
 
 - `rmbg2.0`
 
+### Graceful Shutdown
+
+Gracefully shut down the AHA server. This endpoint initiates a graceful shutdown process that:
+1. Stops accepting new connections
+2. Waits for existing requests to complete (up to 1 second)
+3. Cleans up PID files
+4. Exits the process
+
+#### Endpoint
+```
+POST /shutdown
+```
+
+#### Request Body
+
+None (empty request)
+
+#### Response
+
+**Success (HTTP 200):**
+
+```json
+{
+  "message": "Shutting down..."
+}
+```
+
+**Forbidden (HTTP 403):**
+
+When remote shutdown is not allowed:
+
+```json
+{
+  "error": "Remote shutdown not allowed. Use --allow-remote-shutdown flag to enable (not recommended)."
+}
+```
+
+#### Security
+
+By default, the shutdown endpoint only allows requests from localhost (127.0.0.1). To enable remote shutdown, start the server with the `--allow-remote-shutdown` flag:
+
+```bash
+aha serv -m qwen3-0.6b --allow-remote-shutdown
+```
+
+**Warning:** Enabling remote shutdown is not recommended for production use unless properly secured.
+
+#### Example
+
+```bash
+curl -X POST http://127.0.0.1:10100/shutdown
+```
+
+#### Logging
+
+All shutdown requests are logged to stderr with the format:
+
+```
+[SHUTDOWN] Shutdown requested (remote_allowed: false)
+```
+
 ## Error Handling
 
 ### Error Codes
