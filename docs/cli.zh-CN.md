@@ -254,6 +254,63 @@ aha delete --model qwen3vl-2b
 - 如果模型目录不存在，显示"模型未找到"消息
 - 删除完成后显示"删除成功"消息
 
+### list - 列出所有支持的模型
+
+列出所有支持的模型及其 ModelScope ID。
+
+**语法：**
+```bash
+aha list [OPTIONS]
+```
+
+**选项：**
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `-j, --json` | 以 JSON 格式输出（包含 name、model_id 和 type 字段） | false |
+
+**示例：**
+
+```bash
+# 以表格格式列出模型（默认）
+aha list
+
+# 以 JSON 格式列出模型
+aha list --json
+
+# 简写形式
+aha list -j
+```
+
+**JSON 输出格式：**
+
+使用 `--json` 时，输出包含：
+- `name`：与 `-m` 参数一起使用的模型标识符
+- `model_id`：完整的 ModelScope 模型 ID
+- `type`：模型类别（`llm`、`ocr`、`asr` 或 `image`）
+
+示例：
+```json
+[
+  {
+    "name": "qwen3vl-2b",
+    "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+    "type": "llm"
+  },
+  {
+    "name": "deepseek-ocr",
+    "model_id": "deepseek-ai/DeepSeek-OCR",
+    "type": "ocr"
+  }
+]
+```
+
+**模型类型：**
+- `llm`：语言模型（文本生成、对话等）
+- `ocr`：光学字符识别模型
+- `asr`：自动语音识别模型
+- `image`：图像处理模型
+
 ## 支持的模型
 
 | 模型标识 | 模型名称 | 说明 |

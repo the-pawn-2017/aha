@@ -254,6 +254,63 @@ aha delete --model qwen3vl-2b
 - Shows "Model not found" message if the model directory doesn't exist
 - Shows "Model deleted successfully" message after completion
 
+### list - List all supported models
+
+List all supported models with their ModelScope IDs.
+
+**Syntax:**
+```bash
+aha list [OPTIONS]
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-j, --json` | Output in JSON format (includes name, model_id, and type fields) | false |
+
+**Examples:**
+
+```bash
+# List models in table format (default)
+aha list
+
+# List models in JSON format
+aha list --json
+
+# Short form
+aha list -j
+```
+
+**JSON Output Format:**
+
+When using `--json`, the output includes:
+- `name`: Model identifier used with `-m` flag
+- `model_id`: Full ModelScope model ID
+- `type`: Model category (`llm`, `ocr`, `asr`, or `image`)
+
+Example:
+```json
+[
+  {
+    "name": "qwen3vl-2b",
+    "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+    "type": "llm"
+  },
+  {
+    "name": "deepseek-ocr",
+    "model_id": "deepseek-ai/DeepSeek-OCR",
+    "type": "ocr"
+  }
+]
+```
+
+**Model Types:**
+- `llm`: Language models (text generation, chat, etc.)
+- `ocr`: Optical Character Recognition models
+- `asr`: Automatic Speech Recognition models
+- `image`: Image processing models
+
 ## Supported Models
 
 | Model ID | Model Name | Description |

@@ -6,6 +6,8 @@ use aha::{
     utils::{download_model, get_default_save_dir},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use serde::Serialize;
+use serde_json;
 use rocket::{
     Config,
     data::{ByteUnit, Limits},
@@ -63,7 +65,7 @@ enum Commands {
     /// Run model inference directly
     Run(RunArgs),
     /// List all supported models
-    List,
+    List(ListArgs),
 }
 
 /// Common/shared arguments for server operations
@@ -168,6 +170,14 @@ struct DeleteArgs {
     model: WhichModel,
 }
 
+/// Arguments for the 'list' subcommand (list all supported models)
+#[derive(Args, Debug)]
+struct ListArgs {
+    /// Output models in JSON format (includes name, model_id, and type fields)
+    #[arg(short, long)]
+    json: bool,
+}
+
 /// Get the default weight path for a given model
 /// Returns ~/.aha/{model_id} e.g., ~/.aha/OpenBMB/VoxCPM1.5
 fn get_default_weight_path(model: WhichModel) -> String {
@@ -176,8 +186,17 @@ fn get_default_weight_path(model: WhichModel) -> String {
     format!("{}/{}", save_dir, model_id)
 }
 
+/// Model information for JSON output
+#[derive(Serialize)]
+struct ModelInfo {
+    name: String,
+    model_id: String,
+    #[serde(rename = "type")]
+    model_type: String,
+}
+
 /// List all supported models
-fn run_list() -> anyhow::Result<()> {
+fn run_list(args: ListArgs) -> anyhow::Result<()> {
     let models = [
         WhichModel::MiniCPM4_0_5B,
         WhichModel::Qwen2_5vl3B,
@@ -199,15 +218,29 @@ fn run_list() -> anyhow::Result<()> {
         WhichModel::FunASRNano2512,
     ];
 
-    println!("Available models:");
-    println!();
-    println!("{:<30} ModelScope ID", "Model Name");
-    println!("{}", "-".repeat(80));
-    for model in models {
-        let possible_value = model.to_possible_value().unwrap();
-        let name = possible_value.get_name();
-        let id = model.model_id();
-        println!("{:<30} {}", name, id);
+    if args.json {
+        // JSON output
+        let model_infos: Vec<ModelInfo> = models.iter().map(|model| {
+            let possible_value = model.to_possible_value().unwrap();
+            ModelInfo {
+                name: possible_value.get_name().to_string(),
+                model_id: model.model_id().to_string(),
+                model_type: model.model_type().to_string(),
+            }
+        }).collect();
+        println!("{}", serde_json::to_string_pretty(&model_infos)?);
+    } else {
+        // Table output (default)
+        println!("Available models:");
+        println!();
+        println!("{:<30} ModelScope ID", "Model Name");
+        println!("{}", "-".repeat(80));
+        for model in models {
+            let possible_value = model.to_possible_value().unwrap();
+            let name = possible_value.get_name();
+            let id = model.model_id();
+            println!("{:<30} {}", name, id);
+        }
     }
 
     Ok(())
@@ -517,7 +550,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Delete(args)) => run_delete(args),
         Some(Commands::Download(args)) => run_download(args).await,
         Some(Commands::Run(args)) => run_run(args),
-        Some(Commands::List) => run_list(),
+        Some(Commands::List(args)) => run_list(args),
         None => {
             // Backward compatibility: when no subcommand is provided, use 'cli' behavior
             let model = cli.model.expect("Model is required (use -m or --model)");
