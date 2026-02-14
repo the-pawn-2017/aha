@@ -25,7 +25,7 @@ fn messy_test() -> Result<()> {
         &emo_matrix_path,
         "feat2/data/0",
         Shape::from_dims(&[73, 1280]),
-        &device,
+        device,
     )?;
     println!("t_emo: {}", t_emo);
     let skp_matrix_path = model_path + "/feat1.pt";
@@ -33,7 +33,7 @@ fn messy_test() -> Result<()> {
         &skp_matrix_path,
         "feat1/data/0",
         Shape::from_dims(&[73, 192]),
-        &device,
+        device,
     )?;
     println!("t_skp: {}", t_skp);
     // let file = File::open(emo_matrix_path)?;

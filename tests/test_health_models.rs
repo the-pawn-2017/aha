@@ -15,7 +15,7 @@ fn test_model_type_classification() {
     // Image models: RMBG2_0, VoxCPM, VoxCPM1_5
 
     // This test documents the expected model type classification
-    let llm_models = vec![
+    let llm_models = [
         WhichModel::MiniCPM4_0_5B,
         WhichModel::Qwen2_5vl3B,
         WhichModel::Qwen2_5vl7B,
@@ -26,20 +26,20 @@ fn test_model_type_classification() {
         WhichModel::Qwen3vl32B,
     ];
 
-    let ocr_models = vec![
+    let ocr_models = [
         WhichModel::DeepSeekOCR,
         WhichModel::HunyuanOCR,
         WhichModel::PaddleOCRVL,
     ];
 
-    let asr_models = vec![
+    let asr_models = [
         WhichModel::Qwen3ASR0_6B,
         WhichModel::Qwen3ASR1_7B,
         WhichModel::GlmASRNano2512,
         WhichModel::FunASRNano2512,
     ];
 
-    let image_models = vec![
+    let image_models = [
         WhichModel::RMBG2_0,
         WhichModel::VoxCPM,
         WhichModel::VoxCPM1_5,
