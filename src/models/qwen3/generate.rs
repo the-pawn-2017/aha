@@ -116,7 +116,6 @@ impl<'a> GenerateModel for Qwen3GenerateModel<'a> {
         let mut logit_processor =
             get_logit_processor(Some(temperature), Some(top_p), Some(top_k), seed);
         let enable_thinking = extract_metadata_value::<bool>(&mes.metadata, "enable_thinking");
-        // let mes_render = self.chat_template.apply_chat_template(&mes)?;
         let mes_render = self
             .chat_template
             .apply_chat_temp_think(&mes, enable_thinking)?;

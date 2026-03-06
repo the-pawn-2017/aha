@@ -144,12 +144,6 @@ impl<'a> GenerateModel for Qwen2_5VLGenerateModel<'a> {
             .text_encode(input.replace_text.clone(), &self.device)?;
         let mut seq_len = input_ids.dim(1)?;
         let mut seqlen_offset = 0;
-        let pixel_values = input.pixel_values.clone();
-        let image_grid_thw = input.image_grid_thw.clone();
-        let pixel_values_video = input.pixel_values_video.clone();
-        let video_grid_thw = input.video_grid_thw.clone();
-        let second_per_grid_ts = input.second_per_grid_ts.clone();
-
         let mut mask = Tensor::ones_like(&input_ids)?;
         let mut cache_position = Tensor::ones_like(&input_ids.i(0)?)?
             .to_dtype(candle_core::DType::F64)?
@@ -160,10 +154,10 @@ impl<'a> GenerateModel for Qwen2_5VLGenerateModel<'a> {
         let sample_len = mes.max_tokens.unwrap_or(512);
         let stream = stream! {
             let mut error_tokens = Vec::new();
-            let mut pixel_values = pixel_values.as_ref();
-            let image_grid_thw = image_grid_thw.as_ref();
-            let mut pixel_values_video = pixel_values_video.as_ref();
-            let video_grid_thw = video_grid_thw.as_ref();
+            let mut pixel_values = input.pixel_values.as_ref();
+            let image_grid_thw = input.image_grid_thw.as_ref();
+            let mut pixel_values_video = input.pixel_values_video.as_ref();
+            let video_grid_thw = input.video_grid_thw.as_ref();
             let mut tool_call_id = None;
             let mut tool_call_content = String::new();
             for _ in 0..sample_len {
@@ -176,7 +170,7 @@ impl<'a> GenerateModel for Qwen2_5VLGenerateModel<'a> {
                     &mask,
                     Some(&cache_position),
                     seqlen_offset,
-                    second_per_grid_ts.clone(),
+                    input.second_per_grid_ts.clone(),
                 )?;
                 let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
                 let next_token = logit_processor.sample(&logits)?;

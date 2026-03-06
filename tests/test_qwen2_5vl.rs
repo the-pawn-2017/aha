@@ -63,7 +63,7 @@ fn qwen2_5vl_generate() -> Result<()> {
 
 #[tokio::test]
 async fn qwen2_5vl_stream() -> Result<()> {
-    // test with cuda+flash-attn: RUST_BACKTRACE=1 cargo test -F cuda,flash-attn qwen2_5vl_stream -r -- --nocapture
+    // test with cuda: RUST_BACKTRACE=1 cargo test -F cuda qwen2_5vl_stream -r -- --nocapture
     // let device = Device::cuda_if_available(0)?;
     // let dtype = DType::BF16;
 

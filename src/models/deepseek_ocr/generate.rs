@@ -80,22 +80,32 @@ impl GenerateModel for DeepseekOCRGenerateModel {
         let (mut input_ids, images_ori, image_crop, images_seq_mask, images_spatial_crop_t) = self
             .processor
             .process_info(&mes, &self.tokenizer, base_size, image_size, crop_mode)?;
-        let mut images_ori = Some(&images_ori);
-        let mut image_crop = Some(&image_crop);
-        let mut images_seq_mask = Some(&images_seq_mask);
-        let mut images_spatial_crop_t = Some(&images_spatial_crop_t);
         let mut seqlen_offset = 0;
         let mut seq_len = input_ids.dim(1)?;
         let prompt_tokens = seq_len as u32;
         let mut generate = Vec::new();
+        let logits = self.deepseekocr_model.forward(
+            &input_ids,
+            Some(&images_ori),
+            Some(&image_crop),
+            Some(&images_seq_mask),
+            Some(&images_spatial_crop_t),
+            seqlen_offset,
+        )?;
+        let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
+        let next_token = logit_processor.sample(&logits)?;
+        generate.push(next_token);
+        input_ids = Tensor::from_vec(vec![next_token], (1, 1), &self.device)?;
+        seqlen_offset += seq_len;
+        seq_len = 1;
         let sample_len = mes.max_tokens.unwrap_or(1024);
-        for _ in 0..sample_len {
+        for _ in 1..sample_len {
             let logits = self.deepseekocr_model.forward(
                 &input_ids,
-                images_ori,
-                image_crop,
-                images_seq_mask,
-                images_spatial_crop_t,
+                None,
+                None,
+                None,
+                None,
                 seqlen_offset,
             )?;
             let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
@@ -107,10 +117,6 @@ impl GenerateModel for DeepseekOCRGenerateModel {
             seqlen_offset += seq_len;
             seq_len = 1;
             input_ids = Tensor::from_vec(vec![next_token], (1, 1), &self.device)?;
-            images_ori = None;
-            image_crop = None;
-            images_seq_mask = None;
-            images_spatial_crop_t = None;
         }
         let num_token = generate.len() as u32;
         let res = self.tokenizer.token_decode(generate)?;

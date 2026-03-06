@@ -153,18 +153,14 @@ impl<'a> GenerateModel for Qwen3VLGenerateModel<'a> {
             .text_encode(input.replace_text.clone(), &self.device)?;
         let mut seq_len = input_ids.dim(1)?;
         let mut seqlen_offset = 0;
-        let pixel_values = input.pixel_values.clone();
-        let image_grid_thw = input.image_grid_thw.clone();
-        let pixel_values_video = input.pixel_values_video.clone();
-        let video_grid_thw = input.video_grid_thw.clone();
         let mut cache_position = Tensor::arange(0u32, seq_len as u32, &self.device)?;
         let sample_len = mes.max_tokens.unwrap_or(1024);
         let stream = stream! {
             let mut error_tokens = Vec::new();
-            let mut pixel_values = pixel_values.as_ref();
-            let image_grid_thw = image_grid_thw.as_ref();
-            let mut pixel_values_video = pixel_values_video.as_ref();
-            let video_grid_thw = video_grid_thw.as_ref();
+            let mut pixel_values = input.pixel_values.as_ref();
+            let image_grid_thw = input.image_grid_thw.as_ref();
+            let mut pixel_values_video = input.pixel_values_video.as_ref();
+            let video_grid_thw = input.video_grid_thw.as_ref();
             let mut tool_call_id = None;
             let mut tool_call_content = String::new();
             for _ in 0..sample_len {
