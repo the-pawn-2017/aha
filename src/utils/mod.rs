@@ -850,3 +850,109 @@ pub fn load_tensor_from_pt(
     let t = Tensor::from_vec(data, shape, device)?;
     Ok(t)
 }
+
+/// Map OpenAI language code to full language name for ASR models
+///
+/// Supports 29 languages as per Qwen3ASR specification
+pub fn map_language_code(code: &str) -> Option<String> {
+    match code.to_lowercase().as_str() {
+        "zh" => Some("Chinese".to_string()),
+        "en" => Some("English".to_string()),
+        "yue" => Some("Cantonese".to_string()),
+        "ar" => Some("Arabic".to_string()),
+        "de" => Some("German".to_string()),
+        "fr" => Some("French".to_string()),
+        "es" => Some("Spanish".to_string()),
+        "pt" => Some("Portuguese".to_string()),
+        "id" => Some("Indonesian".to_string()),
+        "it" => Some("Italian".to_string()),
+        "ko" => Some("Korean".to_string()),
+        "ru" => Some("Russian".to_string()),
+        "th" => Some("Thai".to_string()),
+        "vi" => Some("Vietnamese".to_string()),
+        "ja" => Some("Japanese".to_string()),
+        "tr" => Some("Turkish".to_string()),
+        "hi" => Some("Hindi".to_string()),
+        "ms" => Some("Malay".to_string()),
+        "nl" => Some("Dutch".to_string()),
+        "sv" => Some("Swedish".to_string()),
+        "da" => Some("Danish".to_string()),
+        "fi" => Some("Finnish".to_string()),
+        "pl" => Some("Polish".to_string()),
+        "cs" => Some("Czech".to_string()),
+        "fil" => Some("Filipino".to_string()),
+        "fa" => Some("Persian".to_string()),
+        "el" => Some("Greek".to_string()),
+        "ro" => Some("Romanian".to_string()),
+        "hu" => Some("Hungarian".to_string()),
+        "mk" => Some("Macedonian".to_string()),
+        _ => None,
+    }
+}
+
+/// Clean ASR model output by extracting pure text from model-specific format
+///
+/// Qwen3ASR outputs format: "language English<asr_text>The morning sun..."
+/// This function extracts the text after "<asr_text>" marker.
+/// If no marker is found, returns the original text trimmed (for compatibility).
+pub fn clean_asr_response(raw: &str) -> String {
+    if let Some(start) = raw.find("<asr_text>") {
+        raw[start + "<asr_text>".len()..].trim().to_string()
+    } else {
+        raw.trim().to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_language_code_chinese() {
+        assert_eq!(map_language_code("zh"), Some("Chinese".to_string()));
+    }
+
+    #[test]
+    fn test_map_language_code_english() {
+        assert_eq!(map_language_code("en"), Some("English".to_string()));
+    }
+
+    #[test]
+    fn test_map_language_code_case_insensitive() {
+        assert_eq!(map_language_code("ZH"), Some("Chinese".to_string()));
+        assert_eq!(map_language_code("EN"), Some("English".to_string()));
+    }
+
+    #[test]
+    fn test_map_language_code_invalid() {
+        assert_eq!(map_language_code("xx"), None);
+    }
+
+    #[test]
+    fn test_clean_asr_response_standard_format() {
+        let raw = "language English<asr_text>The morning sun cast golden light";
+        let cleaned = clean_asr_response(raw);
+        assert_eq!(cleaned, "The morning sun cast golden light");
+    }
+
+    #[test]
+    fn test_clean_asr_response_chinese_format() {
+        let raw = "language Chinese<asr_text>科技不断改变着我们的生活";
+        let cleaned = clean_asr_response(raw);
+        assert_eq!(cleaned, "科技不断改变着我们的生活");
+    }
+
+    #[test]
+    fn test_clean_asr_response_with_newlines() {
+        let raw = "language English<asr_text>\n\n  Hello world\n  ";
+        let cleaned = clean_asr_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    #[test]
+    fn test_clean_asr_response_no_marker() {
+        let raw = "  Plain text without marker  ";
+        let cleaned = clean_asr_response(raw);
+        assert_eq!(cleaned, "Plain text without marker");
+    }
+}

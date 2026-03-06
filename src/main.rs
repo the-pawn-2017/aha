@@ -632,8 +632,10 @@ pub(crate) async fn start_http_server(
     builder = builder.mount("/chat", routes![api::chat]);
     // /images/remove_background
     builder = builder.mount("/images", routes![api::remove_background]);
-    // /audio/speech
-    builder = builder.mount("/audio", routes![api::speech]);
+    // /audio/speech and /audio/transcriptions (ASR transcription endpoint)
+    builder = builder.mount("/audio", routes![api::speech, api::transcriptions]);
+    // /v1/audio/transcriptions (OpenAI standard ASR transcription endpoint)
+    builder = builder.mount("/v1/audio", routes![api::transcriptions]);
     // Health check and model info endpoints
     builder = builder.mount("/", routes![api::health, api::models]);
     // Shutdown endpoint

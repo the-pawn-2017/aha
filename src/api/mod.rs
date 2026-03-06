@@ -18,13 +18,21 @@ use rocket::{
 };
 use tokio::sync::RwLock;
 
+// ASR (Automatic Speech Recognition) API module
+pub(crate) mod asr;
+pub(crate) mod asr_types;
+
+// Re-export ASR routes
+pub(crate) use asr::transcriptions;
+
 /// Wrapper to store model type together with the model instance
-struct StoredModel {
+pub(crate) struct StoredModel {
     which_model: WhichModel,
     instance: ModelInstance<'static>,
 }
 
-static MODEL: OnceLock<Arc<RwLock<StoredModel>>> = OnceLock::new();
+// Export MODEL for use in ASR module
+pub(crate) static MODEL: OnceLock<Arc<RwLock<StoredModel>>> = OnceLock::new();
 static SHUTDOWN_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static SERVER_PORT: OnceLock<u16> = OnceLock::new();
 static ALLOW_REMOTE_SHUTDOWN: OnceLock<bool> = OnceLock::new();

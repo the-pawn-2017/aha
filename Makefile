@@ -14,6 +14,14 @@ build_mac:
 	@echo "Building project for macOS..."
 	@cargo build --features metal  --release
 
+build_mac_universal:
+	@echo "Building universal binary for macOS..."
+	@cargo build --features metal --release --target aarch64-apple-darwin
+	@cargo build --features metal --release --target x86_64-apple-darwin
+	@mkdir -p target/universal/release
+	@lipo -create target/aarch64-apple-darwin/release/aha target/x86_64-apple-darwin/release/aha -output target/universal/release/aha
+
+
 test:
 	@echo "Running tests..."
 	@cargo test
