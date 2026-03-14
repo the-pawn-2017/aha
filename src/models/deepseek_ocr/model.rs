@@ -492,9 +492,11 @@ impl ImageEncoderViT {
     }
     pub fn forward(&self, xs: &Tensor) -> Result<Tensor> {
         let mut x = self.patch_embed.forward(xs)?;
-        if self.pos_embed.is_some() {
+        // if self.pos_embed.is_some() {
+        if let Some(pos_emb) = &self.pos_embed {
             let dim1 = x.dim(1)?;
-            let pos = self.get_abs_pos_sam(self.pos_embed.as_ref().unwrap(), dim1)?;
+            // let pos = self.get_abs_pos_sam(self.pos_embed.as_ref().unwrap(), dim1)?;
+            let pos = self.get_abs_pos_sam(pos_emb, dim1)?;
             x = x.broadcast_add(&pos)?;
         }
         for blk in &self.blocks {

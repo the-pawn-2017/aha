@@ -33,11 +33,11 @@ impl SinusoidalPositionEncoderCat {
             device,
         )?
         .reshape((seq_len, 1))?; // (seq_len, 1)
-        let inv_freq = if self.inv_freq.is_none() {
+        let inv_freq = if let Some(inv_freq) = &self.inv_freq {
+            inv_freq.clone()
+        } else {
             let inv_freq = compute_default_rope_parameters(head_dim, 10000.0);
             Tensor::from_slice(&inv_freq, (1, inv_freq.len()), device)?
-        } else {
-            self.inv_freq.as_ref().unwrap().clone()
         };
         let freqs = positions.matmul(&inv_freq)?; // (seq_len, dim / 2)
         let sin = freqs.sin()?;

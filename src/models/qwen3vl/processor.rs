@@ -10,6 +10,9 @@ use ffmpeg_next as ffmpeg;
 use image::DynamicImage;
 
 #[cfg(feature = "ffmpeg")]
+use anyhow::anyhow;
+
+#[cfg(feature = "ffmpeg")]
 use crate::utils::video_utils::video_smart_resize;
 use crate::{
     models::qwen3vl::config::PreprocessorConfig,

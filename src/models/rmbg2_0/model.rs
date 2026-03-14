@@ -63,10 +63,10 @@ impl PatchEmbed {
             xs = xs.pad_with_zeros(2, 0, self.patch_size - h % self.patch_size)?;
         }
         xs = self.proj.forward(&xs)?;
-        if self.norm.is_some() {
+        if let Some(norm) = &self.norm {
             let (_, _, ph, pw) = xs.dims4()?;
             xs = xs.flatten_from(2)?.transpose(1, 2)?;
-            xs = self.norm.as_ref().unwrap().forward(&xs)?;
+            xs = norm.forward(&xs)?;
             xs = xs.transpose(1, 2)?.reshape(((), self.embed_dim, ph, pw))?;
         }
         Ok(xs)
@@ -1018,9 +1018,12 @@ impl BasicDecBlk {
     pub fn new(vb: VarBuilder, in_c: usize, out_c: usize) -> Result<Self> {
         let inter_channels = 64;
         let conv_in = get_conv2d(vb.pp("conv_in"), in_c, inter_channels, 3, 1, 1, 1, 1, true)?;
-        let dec_att = ASPPDeformable::new(vb.pp("dec_att"), inter_channels, inter_channels, vec![
-            1, 3, 7,
-        ])?;
+        let dec_att = ASPPDeformable::new(
+            vb.pp("dec_att"),
+            inter_channels,
+            inter_channels,
+            vec![1, 3, 7],
+        )?;
         let conv_out = get_conv2d(
             vb.pp("conv_out"),
             inter_channels,

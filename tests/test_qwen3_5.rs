@@ -21,8 +21,15 @@ fn qwen3_5_generate() -> Result<()> {
                 "role": "user",
                 "content": [        
                     {
+                        "type": "image",
+                        "image_url": 
+                        {
+                            "url": "file:///home/jhq/Downloads/gougou1.jpg"
+                        }
+                    },             
+                    {
                         "type": "text", 
-                        "text": "你好啊，你是谁"
+                        "text": "描述这张图片."
                     }
                 ]
             }

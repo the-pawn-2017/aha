@@ -1316,26 +1316,26 @@ impl Qwen3_5Model {
         video_grid_thw: Option<&Tensor>,
         seqlen_offset: usize,
     ) -> Result<Tensor> {
-        let position_ids = if self.rope_deltas.is_none() {
-            let (position_ids, rope_deltas) =
-                self.get_rope_index(input_ids, image_grid_thw, video_grid_thw, None)?;
-            self.rope_deltas = Some(rope_deltas);
-            position_ids
-        } else {
+        let position_ids = if let Some(rope_deltas) = &self.rope_deltas {
             let (bs, seq_len, _) = inputs_embeds.dims3()?;
             Tensor::arange(
                 seqlen_offset as i64,
                 (seqlen_offset + seq_len) as i64,
                 input_ids.device(),
             )?
-            .to_dtype(self.rope_deltas.as_ref().unwrap().dtype())?
+            .to_dtype(rope_deltas.dtype())?
             .unsqueeze(0)?
             .broadcast_as((bs, seq_len))?
-            .broadcast_add(self.rope_deltas.as_ref().unwrap())?
+            .broadcast_add(rope_deltas)?
             .unsqueeze(0)?
             .broadcast_as((3, bs, seq_len))?
             .contiguous()?
             .to_dtype(candle_core::DType::U32)?
+        } else {
+            let (position_ids, rope_deltas) =
+                self.get_rope_index(input_ids, image_grid_thw, video_grid_thw, None)?;
+            self.rope_deltas = Some(rope_deltas);
+            position_ids
         };
         Ok(position_ids)
     }

@@ -1057,11 +1057,13 @@ impl Qwen2_5VLModel {
             self.rope_deltas = Some(rope_deltas);
         } else {
             let (bs, seq_len, _) = inputs_embeds.dims3()?;
-            let delta = if let Some(cache_position) = cache_position {
+            let delta = if let Some(cache_position) = cache_position
+                && let Some(rope_deltas) = &self.rope_deltas
+            {
                 cache_position
                     .i(0)?
-                    .to_dtype(self.rope_deltas.as_ref().unwrap().dtype())?
-                    .broadcast_add(self.rope_deltas.as_ref().unwrap())?
+                    .to_dtype(rope_deltas.dtype())?
+                    .broadcast_add(rope_deltas)?
                     .contiguous()?
                     .to_dtype(candle_core::DType::U32)?
             } else {

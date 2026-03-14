@@ -268,19 +268,15 @@ impl EncoderLayerSANM {
                 self.self_attn
                     .forward(&xs, mask, mask_shfit_chunk, mask_att_chunk_encoder)?;
             let x_concat = Tensor::cat(&[&xs, &attn], D::Minus1)?;
-            if self.in_dim == self.hidden_dim {
-                let x_concat = self
-                    .concat_linear
-                    .as_ref()
-                    .unwrap()
+            if self.in_dim == self.hidden_dim
+                && let Some(concat_linear) = &self.concat_linear
+            {
+                let x_concat = concat_linear
                     .forward(&x_concat)?
                     .affine(stoch_layer_coeff, 0.0)?;
                 xs = residual.add(&x_concat)?;
-            } else {
-                xs = self
-                    .concat_linear
-                    .as_ref()
-                    .unwrap()
+            } else if let Some(concat_linear) = &self.concat_linear {
+                xs = concat_linear
                     .forward(&x_concat)?
                     .affine(stoch_layer_coeff, 0.0)?;
             }
@@ -496,13 +492,10 @@ impl AdaptorEncoderLayer {
         } else {
             xs.clone()
         };
-        if self.concat_linear.is_some() {
+        if let Some(concat_linear) = &self.concat_linear {
             let attn = self.self_attn.forward(&xs, None, None, mask, false)?;
             let x_concat = Tensor::cat(&[&xs, &attn], D::Minus1)?;
-            let x_concat = self
-                .concat_linear
-                .as_ref()
-                .unwrap()
+            let x_concat = concat_linear
                 .forward(&x_concat)?
                 .affine(stoch_layer_coeff, 0.0)?;
             xs = residual.add(&x_concat)?;
