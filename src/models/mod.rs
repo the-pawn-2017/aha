@@ -168,7 +168,7 @@ pub enum ModelInstance<'a> {
     Qwen3(Qwen3GenerateModel<'a>),
     Qwen3_5(Qwen3_5GenerateModel<'a>),
     Qwen3ASR(Qwen3AsrGenerateModel<'a>),
-    Qwen3VL(Qwen3VLGenerateModel<'a>),
+    Qwen3VL(Box<Qwen3VLGenerateModel<'a>>),
     DeepSeekOCR(DeepseekOCRGenerateModel),
     HunyuanOCR(HunyuanOCRGenerateModel<'a>),
     PaddleOCRVL(Box<PaddleOCRVLGenerateModel<'a>>),
@@ -273,19 +273,19 @@ pub fn load_model(model_type: WhichModel, path: &str) -> Result<ModelInstance<'_
         }
         WhichModel::Qwen3vl2B => {
             let model = Qwen3VLGenerateModel::init(path, None, None)?;
-            ModelInstance::Qwen3VL(model)
+            ModelInstance::Qwen3VL(Box::new(model))
         }
         WhichModel::Qwen3vl4B => {
             let model = Qwen3VLGenerateModel::init(path, None, None)?;
-            ModelInstance::Qwen3VL(model)
+            ModelInstance::Qwen3VL(Box::new(model))
         }
         WhichModel::Qwen3vl8B => {
             let model = Qwen3VLGenerateModel::init(path, None, None)?;
-            ModelInstance::Qwen3VL(model)
+            ModelInstance::Qwen3VL(Box::new(model))
         }
         WhichModel::Qwen3vl32B => {
             let model = Qwen3VLGenerateModel::init(path, None, None)?;
-            ModelInstance::Qwen3VL(model)
+            ModelInstance::Qwen3VL(Box::new(model))
         }
         WhichModel::DeepSeekOCR => {
             let model = DeepseekOCRGenerateModel::init(path, None, None)?;

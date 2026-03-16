@@ -1,3 +1,5 @@
+use std::io::{Read, Seek};
+
 use anyhow::{Result, anyhow};
 use candle_core::{D, DType, IndexOp, Shape, Tensor};
 use candle_nn::{
@@ -7,7 +9,10 @@ use candle_nn::{
 
 use crate::{
     models::{
-        common::{TwoLinearMLP, eager_attention_forward, get_layer_norm},
+        common::{
+            eager_attention_forward, get_layer_norm,
+            gguf::{Gguf, ProjKind, TwoLinearMLPGguf},
+        },
         qwen3::model::Qwen3DecoderLayer,
         qwen3vl::config::{
             Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig, qwen3vl_text_config2qwen3_config,
@@ -60,6 +65,33 @@ impl Qwen3VLVisionPatchEmbed {
         })
     }
 
+    pub fn new_from_gguf<R: Read + Seek>(gguf: &mut Gguf<R>) -> Result<Self> {
+        // convert_hf_to_gguf.py
+        // temporal_patch_size = 2
+        //  spilt (embed_dim, in_channels, temporal_patch_size, patch_size, patch_size)
+        //  into two (embed_dim, in_channels, patch_size, patch_size)
+        // elif 'patch_embed.proj.weight' in name:
+        //         # split Conv3D into Conv2Ds
+        //         c1, c2, kt, kh, kw = data_torch.shape
+        //         del c1, c2, kh, kw  # unused
+        //         assert kt == 2, "Current implementation only support temporal_patch_size of 2"
+        //         yield (gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.V_ENC_EMBD_PATCH] + ".weight"  , data_torch[:, :, 0, ...])
+        //         yield (gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.V_ENC_EMBD_PATCH] + ".weight.1", data_torch[:, :, 1, ...])
+        // (embed_dim, in_channels, patch_size, patch_size)  -> (embed_dim, in_channels, 1, patch_size, patch_size)
+        let conv3d_weight_0 = gguf.get_dequantized("v.patch_embd.weight")?.unsqueeze(2)?;
+        let conv3d_weight_1 = gguf
+            .get_dequantized("v.patch_embd.weight.1")?
+            .unsqueeze(2)?;
+        let conv3d_weight = Tensor::cat(&[conv3d_weight_0, conv3d_weight_1], 2)?
+            .flatten(1, 4)?
+            .t()?;
+        let conv3d_bias = gguf.get_dequantized("v.patch_embd.bias")?;
+        Ok(Self {
+            conv3d_weight,
+            conv3d_bias,
+        })
+    }
+
     pub fn forward(&self, hidden_states: &Tensor) -> Result<Tensor> {
         // hidden_states shape:  (grid_t*grid_h*grid_w, c*temporal_patch_size*patch_size*patch_size)
         // ((), 1536) matmul (1536, 1024) -> ((), 1024)
@@ -73,9 +105,11 @@ pub struct Qwen3VLVisionPatchMerger {
     hidden_size: usize,
     use_postshuffle_norm: bool,
     norm: LayerNorm,
-    linear_fc1: Linear,
+    // linear_fc1: Linear,
+    linear_fc1: ProjKind,
     act_fn: Activation,
-    linear_fc2: Linear,
+    // linear_fc2: Linear,
+    linear_fc2: ProjKind,
 }
 
 impl Qwen3VLVisionPatchMerger {
@@ -98,9 +132,34 @@ impl Qwen3VLVisionPatchMerger {
             hidden_size,
             use_postshuffle_norm,
             norm,
-            linear_fc1,
+            linear_fc1: ProjKind::LinearProj(linear_fc1),
             act_fn,
-            linear_fc2,
+            linear_fc2: ProjKind::LinearProj(linear_fc2),
+        })
+    }
+
+    pub fn new_from_gguf<R: Read + Seek>(
+        gguf: &mut Gguf<R>,
+        rms_norm_eps: f64,
+        use_postshuffle_norm: bool,
+        hidden_size: usize,
+        spatial_merge_size: usize,
+        norm_prefix: &str,
+        linear1_prefix: &str,
+        linear2_prefix: &str,
+    ) -> Result<Self> {
+        let hidden_size = hidden_size * spatial_merge_size.pow(2);
+        let norm = gguf.layer_norm(norm_prefix, rms_norm_eps)?;
+        let linear_1 = gguf.quantize_linear(linear1_prefix, true)?;
+        let act_fn = Activation::Gelu;
+        let linear_2 = gguf.quantize_linear(linear2_prefix, true)?;
+        Ok(Self {
+            hidden_size,
+            use_postshuffle_norm,
+            norm,
+            linear_fc1: ProjKind::QuantizedProj(linear_1),
+            act_fn,
+            linear_fc2: ProjKind::QuantizedProj(linear_2),
         })
     }
 
@@ -120,8 +179,10 @@ impl Qwen3VLVisionPatchMerger {
 
 pub struct Qwen3VLVisionAttention {
     num_heads: usize,
-    qkv: Linear,
-    proj: Linear,
+    // qkv: Linear,
+    // proj: Linear,
+    qkv: ProjKind,
+    proj: ProjKind,
     scaling: f64,
 }
 
@@ -136,8 +197,27 @@ impl Qwen3VLVisionAttention {
 
         Ok(Self {
             num_heads,
-            qkv,
-            proj,
+            qkv: ProjKind::LinearProj(qkv),
+            proj: ProjKind::LinearProj(proj),
+            scaling,
+        })
+    }
+
+    pub fn new_from_gguf<R: Read + Seek>(mmproj_gguf: &mut Gguf<R>, prefix: &str) -> Result<Self> {
+        let num_heads = mmproj_gguf
+            .get_matedata("clip.vision.attention.head_count")?
+            .to_u32()? as usize;
+        let hidden_size = mmproj_gguf
+            .get_matedata("clip.vision.embedding_length")?
+            .to_u32()? as usize;
+        let head_dim = hidden_size / num_heads;
+        let scaling = 1.0 / (head_dim as f64).sqrt();
+        let qkv = mmproj_gguf.quantize_linear(&format!("{prefix}.attn_qkv"), true)?;
+        let proj = mmproj_gguf.quantize_linear(&format!("{prefix}.attn_out"), true)?;
+        Ok(Self {
+            num_heads,
+            qkv: ProjKind::QuantizedProj(qkv),
+            proj: ProjKind::QuantizedProj(proj),
             scaling,
         })
     }
@@ -195,7 +275,8 @@ pub struct Qwen3VLVisionBlock {
     norm1: LayerNorm,
     norm2: LayerNorm,
     attn: Qwen3VLVisionAttention,
-    mlp: TwoLinearMLP,
+    // mlp: TwoLinearMLP,
+    mlp: TwoLinearMLPGguf,
 }
 
 impl Qwen3VLVisionBlock {
@@ -203,7 +284,17 @@ impl Qwen3VLVisionBlock {
         let norm1 = get_layer_norm(vb.pp("norm1"), 1e-6, config.hidden_size, true)?;
         let norm2 = get_layer_norm(vb.pp("norm2"), 1e-6, config.hidden_size, true)?;
         let attn = Qwen3VLVisionAttention::new(config.clone(), vb.pp("attn"))?;
-        let mlp = TwoLinearMLP::new(
+        // let mlp = TwoLinearMLP::new(
+        //     vb.pp("mlp"),
+        //     config.hidden_size,
+        //     config.intermediate_size,
+        //     config.hidden_size,
+        //     config.hidden_act,
+        //     true,
+        //     "linear_fc1",
+        //     "linear_fc2",
+        // )?;
+        let mlp = TwoLinearMLPGguf::new(
             vb.pp("mlp"),
             config.hidden_size,
             config.intermediate_size,
@@ -212,6 +303,30 @@ impl Qwen3VLVisionBlock {
             true,
             "linear_fc1",
             "linear_fc2",
+        )?;
+        Ok(Self {
+            norm1,
+            norm2,
+            attn,
+            mlp,
+        })
+    }
+
+    pub fn new_from_gguf<R: Read + Seek>(
+        mmproj_gguf: &mut Gguf<R>,
+        prefix: &str,
+        rms_norm_eps: f64,
+    ) -> Result<Self> {
+        let norm1 = mmproj_gguf.layer_norm(&format!("{prefix}.ln1"), rms_norm_eps)?;
+        let norm2 = mmproj_gguf.layer_norm(&format!("{prefix}.ln2"), rms_norm_eps)?;
+        let attn = Qwen3VLVisionAttention::new_from_gguf(mmproj_gguf, prefix)?;
+        let mlp = TwoLinearMLPGguf::new_from_gguf(
+            mmproj_gguf,
+            prefix,
+            true,
+            Some("ffn_up"),
+            Some("ffn_down"),
+            Some(Activation::GeluPytorchTanh),
         )?;
         Ok(Self {
             norm1,
@@ -289,6 +404,92 @@ impl Qwen3VLVisionModel {
             deepstack_visual_indexes,
             deepstack_merger_list,
             dtype: vb.dtype(),
+        })
+    }
+
+    pub fn new_from_gguf<R: Read + Seek>(mmproj_gguf: &mut Gguf<R>) -> Result<Self> {
+        // let num_layers = gguf.get_matedata("qwen35.block_count")?.to_u32()? as usize;
+        let spatial_merge_size = mmproj_gguf
+            .get_matedata("clip.vision.spatial_merge_size")?
+            .to_u32()? as usize;
+        let patch_embed = Qwen3VLVisionPatchEmbed::new_from_gguf(mmproj_gguf)?;
+        let pos_emb_weight = mmproj_gguf.get_dequantized("v.position_embd.weight")?;
+        let hidden_size = mmproj_gguf
+            .get_matedata("clip.vision.embedding_length")?
+            .to_u32()? as usize;
+        let pos_embed = Embedding::new(pos_emb_weight, hidden_size);
+        let patch_size = mmproj_gguf
+            .get_matedata("clip.vision.patch_size")?
+            .to_u32()? as usize;
+        let image_size = mmproj_gguf
+            .get_matedata("clip.vision.image_size")?
+            .to_u32()? as usize;
+        let num_grid_per_side = image_size / patch_size;
+        let num_heads = mmproj_gguf
+            .get_matedata("clip.vision.attention.head_count")?
+            .to_u32()? as usize;
+        let head_dim = hidden_size / num_heads;
+        let rotary_pos_emb = Qwen2_5VisionRotaryEmbedding::new(head_dim / 2, None);
+        let rms_norm_eps = mmproj_gguf
+            .get_matedata("clip.vision.attention.layer_norm_epsilon")?
+            .to_f32()? as f64;
+        let mut blocks = Vec::new();
+        let num_block = mmproj_gguf
+            .get_matedata("clip.vision.block_count")?
+            .to_u32()? as usize;
+        for i in 0..num_block {
+            let prefix = format!("v.blk.{i}");
+            // let block = Qwen3VLVisionBlock::new(config.clone(), vb_blocks.pp(i))?;
+            let block = Qwen3VLVisionBlock::new_from_gguf(mmproj_gguf, &prefix, rms_norm_eps)?;
+            blocks.push(block);
+        }
+        let merger = Qwen3VLVisionPatchMerger::new_from_gguf(
+            mmproj_gguf,
+            rms_norm_eps,
+            false,
+            hidden_size,
+            spatial_merge_size,
+            "v.post_ln",
+            "mm.0",
+            "mm.2",
+        )?;
+        let mut deepstack_merger_list = Vec::new();
+        let is_deepstack = mmproj_gguf
+            .get_matedata("clip.vision.is_deepstack_layers")?
+            .to_vec()?
+            .iter()
+            .map(|b| b.to_bool())
+            .collect::<Result<Vec<bool>, candle_core::Error>>()?;
+        let deepstack_visual_indexes = is_deepstack
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &b)| if b { Some(i) } else { None })
+            .collect::<Vec<usize>>();
+        for i in &deepstack_visual_indexes {
+            let prefix = format!("v.deepstack.{i}");
+            let merger_i = Qwen3VLVisionPatchMerger::new_from_gguf(
+                mmproj_gguf,
+                rms_norm_eps,
+                true,
+                hidden_size,
+                spatial_merge_size,
+                &format!("{prefix}.norm"),
+                &format!("{prefix}.fc1"),
+                &format!("{prefix}.fc2"),
+            )?;
+            deepstack_merger_list.push(merger_i);
+        }
+        Ok(Self {
+            spatial_merge_size,
+            patch_embed,
+            pos_embed,
+            num_grid_per_side: num_grid_per_side as u32,
+            rotary_pos_emb,
+            blocks,
+            merger,
+            deepstack_visual_indexes,
+            deepstack_merger_list,
+            dtype: DType::F32,
         })
     }
 

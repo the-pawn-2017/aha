@@ -24,12 +24,12 @@ fn qwen3_5_generate() -> Result<()> {
                         "type": "image",
                         "image_url": 
                         {
-                            "url": "file:///home/jhq/Downloads/gougou1.jpg"
+                            "url": "file://./assets/img/ocr_test1.png"
                         }
                     },             
                     {
                         "type": "text", 
-                        "text": "描述这张图片."
+                        "text": "OCR"
                     }
                 ]
             }

@@ -29,7 +29,7 @@ fn qwen3vl_thinking_generate() -> Result<()> {
                     },             
                     {
                         "type": "text", 
-                        "text": "请分析图片并提取所有可见文本内容，按从左到右、从上到下的布局，返回纯文本"
+                        "text": "OCR"
                     }
                 ]
             }
@@ -59,7 +59,7 @@ fn qwen3vl_thinking_generate() -> Result<()> {
 
 #[test]
 fn qwen3vl_generate() -> Result<()> {
-    // test with cuda: RUST_BACKTRACE=1 cargo test -F cuda,ffmpeg --test test_qwen3vl qwen3vl_generate -r -- --nocapture
+    // test with cuda: RUST_BACKTRACE=1 cargo test -F cuda --test test_qwen3vl qwen3vl_generate -r -- --nocapture
 
     let save_dir =
         aha::utils::get_default_save_dir().ok_or(anyhow::anyhow!("Failed to get save dir"))?;
@@ -73,15 +73,15 @@ fn qwen3vl_generate() -> Result<()> {
                 "role": "user",
                 "content": [
                     {
-                        "type": "video",
-                        "video_url": 
+                        "type": "image",
+                        "image_url": 
                         {
-                            "url": "./assets/video/video_test.mp4"
+                            "url": "file://./assets/img/ocr_test1.png"
                         }
-                    },              
+                    },             
                     {
                         "type": "text", 
-                        "text": "视频中发生了什么？"
+                        "text": "OCR"
                     }
                 ]
             }

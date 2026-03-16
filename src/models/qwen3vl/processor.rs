@@ -101,7 +101,6 @@ impl Qwen3VLProcessor {
             max_frames: 768,
         })
     }
-
     pub fn new_qwen3_5_default(device: &Device, dtype: DType) -> Result<Self> {
         let img_process_cfg = PreprocessorConfig::qwen3_5_img_default();
         let video_process_cfg = PreprocessorConfig::qwen3_5_video_default();

@@ -1172,7 +1172,7 @@ pub fn conv1d_depthwise(input: &Tensor, weight: &Tensor, bias: Option<&Tensor>) 
     // weight: (dim, 1, k) -> (dim, k)
     // input already padding
     let len_in = input.dim(2)?;
-    let weight = weight.squeeze(1)?;
+    let weight = weight.squeeze(1)?.to_dtype(input.dtype())?;
     let kernel_size = weight.dim(1)?;
     // len_out = (len_in - k + 2p) / s + 1, p = 0, s = 1
     let len_out = len_in - kernel_size + 1;
@@ -1189,7 +1189,7 @@ pub fn conv1d_depthwise(input: &Tensor, weight: &Tensor, bias: Option<&Tensor>) 
         None => Ok(out),
         Some(bias) => {
             let b = bias.dims1()?;
-            let bias = bias.reshape((1, b, 1))?;
+            let bias = bias.reshape((1, b, 1))?.to_dtype(input.dtype())?;
             Ok(out.broadcast_add(&bias)?)
         }
     }

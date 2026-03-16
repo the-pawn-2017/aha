@@ -5,6 +5,9 @@ All notable changes to aha will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### 2026-03-16
+- Added Qwen3.5 mmproj
+
 ### 2026-03-14
 - update rust version 
 - Added Qwen3.5 gguf support, but the 4B model still has issues; to be resolved.

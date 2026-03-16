@@ -3,13 +3,15 @@ use std::io::{Read, Seek};
 use ahash::AHashMap;
 use anyhow::{Result, anyhow};
 use candle_core::{
-    Device, Tensor,
+    DType, Device, Tensor,
     quantized::{
         QMatMul, QTensor,
         gguf_file::{self, Value},
     },
 };
-use candle_nn::{Conv1d, Conv1dConfig, Linear, Module, RmsNorm, VarBuilder, linear_b};
+use candle_nn::{
+    Activation, Conv1d, Conv1dConfig, LayerNorm, Linear, Module, RmsNorm, VarBuilder, linear_b,
+};
 use tokenizers::{self, AddedToken, Tokenizer, models::bpe::BPE};
 
 use crate::tokenizer::TokenizerModel;
@@ -37,10 +39,38 @@ impl<R: Read + Seek> Gguf<R> {
         Ok(QMatMul::from_qtensor(ws)?)
     }
 
+    pub fn quantize_linear(&mut self, prefix: &str, bias: bool) -> Result<QuantizedLinear> {
+        let weight = self.qmatmul(&format!("{prefix}.weight"))?;
+        let bias = if bias {
+            self.get_dequantized(&format!("{prefix}.bias")).ok()
+        } else {
+            None
+        };
+        Ok(QuantizedLinear::new(weight, bias))
+    }
+
     pub fn rms_norm(&mut self, name: &str, eps: f64) -> Result<RmsNorm> {
         let ws = self.ct.tensor(&mut self.reader, name, &self.device)?;
         let weight = ws.dequantize(&self.device)?;
         Ok(RmsNorm::new(weight, eps))
+    }
+
+    pub fn layer_norm(&mut self, prefix: &str, eps: f64) -> Result<LayerNorm> {
+        let weight = self
+            .ct
+            .tensor(&mut self.reader, &format!("{prefix}.weight"), &self.device)?;
+        let weight = weight.dequantize(&self.device)?;
+        let bias = self
+            .ct
+            .tensor(&mut self.reader, &format!("{prefix}.bias"), &self.device);
+        let bias = match bias {
+            Ok(bias) => bias.dequantize(&self.device).ok(),
+            Err(_) => None,
+        };
+        match bias {
+            Some(bias) => Ok(LayerNorm::new(weight, bias, eps)),
+            None => Ok(LayerNorm::new_no_bias(weight, eps)),
+        }
     }
 
     pub fn metadata(&self) -> &std::collections::HashMap<String, gguf_file::Value> {
@@ -53,6 +83,10 @@ impl<R: Read + Seek> Gguf<R> {
 
     pub fn get_dequantized(&mut self, name: &str) -> Result<Tensor> {
         Ok(self.tensor(name)?.dequantize(&self.device)?)
+    }
+
+    pub fn get_dequantized_f16(&mut self, name: &str) -> Result<Tensor> {
+        Ok(self.tensor(name)?.dequantize_f16(&self.device)?)
     }
 
     pub fn conv1d(
@@ -170,8 +204,35 @@ impl<R: Read + Seek> Gguf<R> {
 }
 
 #[derive(Debug, Clone)]
+pub struct QuantizedLinear {
+    inner: QMatMul,
+    bias: Option<Tensor>,
+}
+
+impl QuantizedLinear {
+    pub fn new(inner: QMatMul, bias: Option<Tensor>) -> Self {
+        Self { inner, bias }
+    }
+}
+
+impl Module for QuantizedLinear {
+    fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
+        let xs = if xs.dtype() == DType::F16 {
+            self.inner.forward_via_f16(xs)?
+        } else {
+            self.inner.forward(xs)?
+        };
+        if let Some(bias) = &self.bias {
+            xs.broadcast_add(&bias.to_dtype(xs.dtype())?)
+        } else {
+            Ok(xs)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ProjKind {
-    QuantizedProj(QMatMul),
+    QuantizedProj(QuantizedLinear),
     LinearProj(Linear),
 }
 
@@ -186,20 +247,52 @@ impl Module for ProjKind {
 
 #[derive(Debug, Clone)]
 pub struct GateUpDownMLPGguf {
-    gate_proj: ProjKind, // ffn_gate.weight
-    up_proj: ProjKind,   // ffn_up.weight
-    down_proj: ProjKind, // ffn_down.weight
+    gate_proj: ProjKind,
+    up_proj: ProjKind,
+    down_proj: ProjKind,
+    act: Activation,
 }
 
 impl GateUpDownMLPGguf {
-    pub fn new_from_gguf<R: Read + Seek>(gguf: &mut Gguf<R>, prefix: &str) -> Result<Self> {
-        let gate_proj = gguf.qmatmul(&format!("{prefix}.ffn_gate.weight"))?;
-        let up_proj = gguf.qmatmul(&format!("{prefix}.ffn_up.weight"))?;
-        let down_proj = gguf.qmatmul(&format!("{prefix}.ffn_down.weight"))?;
+    pub fn new_from_gguf<R: Read + Seek>(
+        gguf: &mut Gguf<R>,
+        prefix: &str,
+        bias: bool,
+        gate_name: Option<&str>,
+        up_name: Option<&str>,
+        down_name: Option<&str>,
+        act: Option<Activation>,
+    ) -> Result<Self> {
+        let gate_name = gate_name.unwrap_or("ffn_gate");
+        let up_name = up_name.unwrap_or("ffn_up");
+        let down_name = down_name.unwrap_or("ffn_down");
+        let gate_proj = gguf.qmatmul(&format!("{prefix}.{gate_name}.weight"))?;
+        let gate_bias = if bias {
+            gguf.get_dequantized(&format!("{prefix}.{gate_name}.bias"))
+                .ok()
+        } else {
+            None
+        };
+        let up_proj = gguf.qmatmul(&format!("{prefix}.{up_name}.weight"))?;
+        let up_bias = if bias {
+            gguf.get_dequantized(&format!("{prefix}.{up_name}.bias"))
+                .ok()
+        } else {
+            None
+        };
+        let down_proj = gguf.qmatmul(&format!("{prefix}.{down_name}.weight"))?;
+        let down_bias = if bias {
+            gguf.get_dequantized(&format!("{prefix}.{down_name}.bias"))
+                .ok()
+        } else {
+            None
+        };
+        let act = act.unwrap_or(Activation::Silu);
         Ok(Self {
-            gate_proj: ProjKind::QuantizedProj(gate_proj),
-            up_proj: ProjKind::QuantizedProj(up_proj),
-            down_proj: ProjKind::QuantizedProj(down_proj),
+            gate_proj: ProjKind::QuantizedProj(QuantizedLinear::new(gate_proj, gate_bias)),
+            up_proj: ProjKind::QuantizedProj(QuantizedLinear::new(up_proj, up_bias)),
+            down_proj: ProjKind::QuantizedProj(QuantizedLinear::new(down_proj, down_bias)),
+            act,
         })
     }
     pub fn new_from_vb(
@@ -210,6 +303,7 @@ impl GateUpDownMLPGguf {
         gate_pp_name: Option<&str>,
         up_pp_name: Option<&str>,
         down_pp_name: Option<&str>,
+        act: Option<Activation>,
     ) -> Result<Self> {
         let gate_pp_name = gate_pp_name.unwrap_or("gate_proj");
         let up_pp_name = up_pp_name.unwrap_or("up_proj");
@@ -217,18 +311,77 @@ impl GateUpDownMLPGguf {
         let gate_proj = linear_b(hidden_size, intermediate_size, bias, vb.pp(gate_pp_name))?;
         let up_proj = linear_b(hidden_size, intermediate_size, bias, vb.pp(up_pp_name))?;
         let down_proj = linear_b(intermediate_size, hidden_size, bias, vb.pp(down_pp_name))?;
+        let act = act.unwrap_or(Activation::Silu);
         Ok(Self {
             gate_proj: ProjKind::LinearProj(gate_proj),
             up_proj: ProjKind::LinearProj(up_proj),
             down_proj: ProjKind::LinearProj(down_proj),
+            act,
         })
     }
 }
 
 impl Module for GateUpDownMLPGguf {
     fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
-        let w1 = self.gate_proj.forward(xs)?;
+        let w1 = self.gate_proj.forward(xs)?.apply(&self.act)?;
         let w3 = self.up_proj.forward(xs)?;
-        self.down_proj.forward(&(candle_nn::ops::silu(&w1)? * w3)?)
+        self.down_proj.forward(&(w1 * w3)?)
+    }
+}
+
+pub struct TwoLinearMLPGguf {
+    linear1: ProjKind,
+    linear2: ProjKind,
+    act: Activation,
+}
+
+impl TwoLinearMLPGguf {
+    pub fn new(
+        vb: VarBuilder,
+        // embedding_dim: usize,
+        // mlp_dim: usize,
+        in_dim: usize,
+        middle_dim: usize,
+        out_dim: usize,
+        act: Activation,
+        bias: bool,
+        linear1_pp_name: &str,
+        linear2_pp_name: &str,
+    ) -> Result<Self> {
+        let linear1 = linear_b(in_dim, middle_dim, bias, vb.pp(linear1_pp_name))?;
+        let linear2 = linear_b(middle_dim, out_dim, bias, vb.pp(linear2_pp_name))?;
+
+        Ok(Self {
+            linear1: ProjKind::LinearProj(linear1),
+            linear2: ProjKind::LinearProj(linear2),
+            act,
+        })
+    }
+
+    pub fn new_from_gguf<R: Read + Seek>(
+        gguf: &mut Gguf<R>,
+        prefix: &str,
+        bias: bool,
+        linear1_name: Option<&str>,
+        linear2_name: Option<&str>,
+        act: Option<Activation>,
+    ) -> Result<Self> {
+        let linear1_name = linear1_name.unwrap_or("ffn_up");
+        let linear2_name = linear2_name.unwrap_or("ffn_down");
+        let linear1 = gguf.quantize_linear(&format!("{prefix}.{linear1_name}"), bias)?;
+        let linear2 = gguf.quantize_linear(&format!("{prefix}.{linear2_name}"), bias)?;
+        let act = act.unwrap_or(Activation::Silu);
+        Ok(Self {
+            linear1: ProjKind::QuantizedProj(linear1),
+            linear2: ProjKind::QuantizedProj(linear2),
+            act,
+        })
+    }
+    pub fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        let xs = xs
+            .apply(&self.linear1)?
+            .apply(&self.act)?
+            .apply(&self.linear2)?;
+        Ok(xs)
     }
 }

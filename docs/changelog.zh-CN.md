@@ -5,6 +5,9 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+### 2026-03-16
+- 增加 Qwen3.5 mmproj
+
 ### 2026-03-14
 - 更新rust版本 
 - 增加了对 Qwen3.5 gguf 的支持，但 4B 模型仍然存在问题；待解决。
